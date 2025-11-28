@@ -1,0 +1,21 @@
+### VisualStudioCode ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+.idea/
+.cache/
+build/
+dist/
+node_modules/
+.DS_Store
+.vscode/
+npm-debug.log
+template.tar.gz
+
+# System Files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Usuarios</title>
+  <style>
+    table { border-collapse: collapse; width: 50%; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background-color: #f4f4f4; }
+  </style>
+</head>
+<body>
+  <h1>Usuarios</h1>
+
+  <input type="text" id="newUser" placeholder="Nuevo usuario" />
+  <button id="addUserBtn">Agregar Usuario</button>
+
+  <table id="usersTable">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Nombre</th>
+        <th>Fecha de creación</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Se llenará dinámicamente -->
+    </tbody>
+  </table>
+
+  <script>
+    const usersTableBody = document.querySelector("#usersTable tbody");
+    const addUserBtn = document.getElementById("addUserBtn");
+    const newUserInput = document.getElementById("newUser");
+
+    // Función para cargar usuarios y pintar la tabla
+    async function loadUsers() {
+      const users = await window.api.getUsers();
+      usersTableBody.innerHTML = ""; // limpiar tabla
+
+      users.forEach(u => {
+        const tr = document.createElement("tr");
+
+        const tdId = document.createElement("td");
+        tdId.textContent = u.id;
+
+        const tdName = document.createElement("td");
+        tdName.textContent = u.name;
+
+        const tdCreated = document.createElement("td");
+        tdCreated.textContent = u.created_at;
+
+        tr.appendChild(tdId);
+        tr.appendChild(tdName);
+        tr.appendChild(tdCreated);
+
+        usersTableBody.appendChild(tr);
+      });
+    }
+
+    // Agregar nuevo usuario
+    addUserBtn.addEventListener("click", async () => {
+      const name = newUserInput.value.trim();
+      if (name) {
+        await window.api.addUser(name);
+        newUserInput.value = "";
+        loadUsers(); // recargar tabla
+      }
+    });
+
+    // Cargar tabla al iniciar
+    loadUsers();
+  </script>
+</body>
+</html>
