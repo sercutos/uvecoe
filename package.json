@@ -1,0 +1,36 @@
+{
+  "name": "openecoe",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "pack": "electron-builder --dir",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "build": {
+    "appId": "com.example.myapp",
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.4",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.5",
+    "better-sqlite3": "^12.4.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}
