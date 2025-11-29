@@ -18,9 +18,9 @@ const db = new Database(dbPath);
 // Creamos la tabla 'users' si no existe
 db.prepare(`
   CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL
-    
+    id INTEGER PRIMARY KEY AUTOINCREMENT,    
+    username TEXT UNIQUE,
+    password TEXT    
   )
 `).run();
 
@@ -31,6 +31,27 @@ db.prepare(`
     puntos INTEGER    
   )
 `).run();
+
+
+// Función para registrar usuario
+function addUser(username, password) {
+  const hashedPassword = bcrypt.hashSync(password, 10);
+  db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hashedPassword]);
+}
+
+
+// Función para validar login
+function validateUser(username, password) {
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT password FROM users WHERE username = ?`, [username], (err, row) => {
+      if (err) reject(err);
+      if (!row) return resolve(false);
+      const isValid = bcrypt.compareSync(password, row.password);
+      resolve(isValid);
+    });
+  });
+}
+
 
 // Insertar registros por defecto si la tabla está vacía
 function insertDefaultIfEmpty(table, defaults) {
@@ -64,5 +85,6 @@ module.exports = {
 
   addUser(name) {
     return db.prepare("INSERT INTO users (name) VALUES (?)").run(name);
-  }
+  },
+  addUser, validateUser
 };

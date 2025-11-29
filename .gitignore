@@ -1,11 +1,6 @@
 ### VisualStudioCode ###
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-*.code-workspace
-
+.vscode/
+# Editor / OS
 .idea/
 .cache/
 build/
@@ -19,3 +14,6 @@ template.tar.gz
 # System Files
 .DS_Store
 Thumbs.db
+
+# Otros
+*.log

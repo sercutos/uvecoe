@@ -1,0 +1,47 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Splash</title>
+  <!-- Fuente Roboto y Material Icons -->
+  <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!-- Material Design Lite CSS -->
+  <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #1976d2; /* Azul Material */
+      font-family: 'Roboto', sans-serif;
+      color: white;
+      flex-direction: column;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: 500;
+      margin-bottom: 20px;
+    }
+    .mdl-spinner {
+      width: 64px;
+      height: 64px;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <span class="material-icons" style="font-size:48px;">bolt</span>
+    <div>OpenECOE</div>
+  </div>
+  <!-- Spinner Material -->
+  <div class="mdl-spinner mdl-js-spinner is-active"></div>
+
+  <!-- Material Design Lite JS -->
+  <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+</body>
+</html>
