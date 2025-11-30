@@ -28,17 +28,20 @@ export default function Toolbar() {
       <Tooltip title="Home">
         <IconButton><HomeIcon onClick={() => navigate("/")} /></IconButton>
       </Tooltip>
-      <Tooltip title="Upload">
+      <Tooltip title="Settings">
         <IconButton><UploadIcon onClick={() => navigate("/settings")} /></IconButton>
       </Tooltip>
-      <Tooltip title="Save">
+      <Tooltip title="Students">
         <IconButton><SaveIcon onClick={() => navigate("/students")}/></IconButton>
       </Tooltip>
-      <Tooltip title="Grid">
+      <Tooltip title="Questions">
         <IconButton><GridViewIcon onClick={() => navigate("/questions")}/></IconButton>
       </Tooltip>
-      <Tooltip title="Charts">
+      <Tooltip title="Evaluation">
         <IconButton><BarChartIcon onClick={() => navigate("/evaluation")}/></IconButton>
+      </Tooltip>
+      <Tooltip title="Login">
+        <IconButton><BarChartIcon onClick={() => navigate("/login")}/></IconButton>
       </Tooltip>
     </Box>
   );
