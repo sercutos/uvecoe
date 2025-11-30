@@ -107,7 +107,7 @@ let loginWindow;
   
   function createMainWindow() {
     mainWindow = new BrowserWindow({
-      width: 1000,
+      width: 1400,
       height: 700,
       show: false,
       webPreferences: {
@@ -119,7 +119,7 @@ let loginWindow;
 
     if (isDev) {
       mainWindow.loadURL("http://localhost:5173");
-      mainWindow.webContents.openDevTools();
+      mainWindow.webContents.openDevTools(); // Abre el herramientas de desarrollador
     } else {
       mainWindow.loadFile(path.join(__dirname, "dist/index.html"));
     }
