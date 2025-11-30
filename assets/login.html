@@ -28,8 +28,8 @@
     <h4>Iniciar sesión</h4>
     <form id="loginForm">
       <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
-        <input class="mdl-textfield__input" type="text" id="username" required>
-        <label class="mdl-textfield__label" for="username">Usuario</label>
+        <input class="mdl-textfield__input" type="text" id="email" required>
+        <label class="mdl-textfield__label" for="email">Usuario</label>
       </div>
       <div class="mdl-textfield mdl-js-textfield mdl-textfield--floating-label">
         <input class="mdl-textfield__input" type="password" id="password" required>
@@ -44,9 +44,9 @@
     const { ipcRenderer } = require('electron');
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const username = document.getElementById('username').value;
+      const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
-      const success = await ipcRenderer.invoke('login', { username, password });
+      const success = await ipcRenderer.invoke('login', { email, password });
       if (!success) alert('Usuario o contraseña incorrectos');
     });
   </script>
