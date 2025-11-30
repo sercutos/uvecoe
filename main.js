@@ -135,7 +135,7 @@ app.whenReady().then(createWindow);
 // IPC
 ipcMain.handle("get-users", () => sqlite.getUsers());
 ipcMain.handle("add-user", (event, name) => {
-  sqlite.addUser(name);
+  //sqlite.addUser(name);
   return true;
 });
 

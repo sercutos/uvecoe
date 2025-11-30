@@ -10,13 +10,14 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 // Ruta del archivo SQLite
-const dbPath = path.join(dataDir, "data.db");
+//const dbPath = path.join(dataDir, "data.db");
+const dbPath = path.join(dataDir, "openecoe_lite.db");
 
 // Abrimos o creamos la base
 const db = new Database(dbPath);
 
 // Creamos la tabla 'users' si no existe
-db.prepare(`
+/*db.prepare(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,    
     username TEXT UNIQUE,
@@ -37,7 +38,7 @@ db.prepare(`
 function addUser(username, password) {
   const hashedPassword = bcrypt.hashSync(password, 10);
   db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hashedPassword]);
-}
+}*/
 
 
 // Función para validar login
@@ -68,23 +69,23 @@ function insertDefaultIfEmpty(table, defaults) {
 }
 
 // Registros por defecto
-insertDefaultIfEmpty("users", [
+insertDefaultIfEmpty("user", [
   { name: "Usuario por defecto" },
   { name: "Admin" }
 ]);
 
-insertDefaultIfEmpty("questions", [
-  { description: "pregunta de pruea", puntos: 1 }
+insertDefaultIfEmpty("question", [
+  { description: "pregunta de prueba", puntos: 1 }
 ]);
 
 
 module.exports = {
   getUsers() {
-    return db.prepare("SELECT * FROM users").all();
+    return db.prepare("SELECT * FROM user").all();
   },
 
   addUser(name) {
-    return db.prepare("INSERT INTO users (name) VALUES (?)").run(name);
+    return db.prepare("INSERT INTO user (name) VALUES (?)").run(name);
   },
-  addUser, validateUser
+  //addUser, validateUser
 };
