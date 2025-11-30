@@ -1,3 +1,4 @@
+const bcrypt = require("bcrypt");
 const Database = require("better-sqlite3");
 const path = require("path");
 const fs = require("fs");
@@ -10,47 +11,23 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 // Ruta del archivo SQLite
-//const dbPath = path.join(dataDir, "data.db");
 const dbPath = path.join(dataDir, "openecoe_lite.db");
-
 // Abrimos o creamos la base
 const db = new Database(dbPath);
 
-// Creamos la tabla 'users' si no existe
-/*db.prepare(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,    
-    username TEXT UNIQUE,
-    password TEXT    
-  )
-`).run();
+// Función para validar usuario con contraseña encriptada
+function validateUser(email, password) {
+  const user = db.prepare("SELECT id, email, name, password FROM user WHERE email = ?").get(email);
 
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS questions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    description TEXT NOT NULL, 
-    puntos INTEGER    
-  )
-`).run();
+  if (!user) return undefined;
 
+  // Compara password en texto plano con hash
+  const match = bcrypt.compareSync(password, user.password); // true o false
+  if (!match) return undefined;
 
-// Función para registrar usuario
-function addUser(username, password) {
-  const hashedPassword = bcrypt.hashSync(password, 10);
-  db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hashedPassword]);
-}*/
-
-
-// Función para validar login
-function validateUser(username, password) {
-  return new Promise((resolve, reject) => {
-    db.get(`SELECT password FROM users WHERE username = ?`, [username], (err, row) => {
-      if (err) reject(err);
-      if (!row) return resolve(false);
-      const isValid = bcrypt.compareSync(password, row.password);
-      resolve(isValid);
-    });
-  });
+  // Retornamos el usuario sin la contraseña
+  const { password: _p, ...userWithoutPassword } = user;
+  return userWithoutPassword;
 }
 
 
@@ -78,14 +55,17 @@ insertDefaultIfEmpty("question", [
   { description: "pregunta de prueba", puntos: 1 }
 ]);
 
-
+// Obtener todos los usuarios
+function getUsers() {
+  return db.prepare("SELECT * FROM user").all();
+}
+// Añadir usuario
+function addUser(name) {
+  return db.prepare("INSERT INTO user (name) VALUES (?)").run(name);
+}
 module.exports = {
-  getUsers() {
-    return db.prepare("SELECT * FROM user").all();
-  },
-
-  addUser(name) {
-    return db.prepare("INSERT INTO user (name) VALUES (?)").run(name);
-  },
+  getUsers,
+  addUser,
+  validateUser,
   //addUser, validateUser
 };

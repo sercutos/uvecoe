@@ -4,19 +4,26 @@ import { TextField, Button, Box, Typography, Paper } from '@mui/material';
 
 export default function Login({ onLogin }) {
   // Declaración de los valores de estado iniciales
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState('');
 
-  const handleSubmit = (e) => {
-      e.preventDefault(); // evita recarga de página
-      // Ejemplo de validación simple
-      if (username === "admin" && password === "1234") {
-        onLogin(); // callback para avisar a la app que el login fue correcto
-      } else {
-        setError("Usuario o contraseña incorrectos");
-      }
-    };
+ const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const result = await await window.api.invoke("login", {
+      email,
+      password
+    });
+
+    if (result.success) {
+      localStorage.setItem("user", JSON.stringify(result.user));
+      onLogin();
+    } else {
+      setError("Credenciales incorrectas");
+    }
+  };
+
 
   return (
     <Box
@@ -34,12 +41,12 @@ export default function Login({ onLogin }) {
         </Typography>
         <form onSubmit={handleSubmit}>
           <TextField
-            label="Usuario"
+            label="Email"
             variant="outlined"
             fullWidth
             margin="normal"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
           />
           <TextField
             label="Contraseña"
