@@ -4,8 +4,8 @@ import { TextField, Button, Box, Typography, Paper } from '@mui/material';
 
 export default function Login({ onLogin }) {
   // Declaración de los valores de estado iniciales
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('ecoe@umh.es');
+  const [password, setPassword] = useState('Kui0chee');
   const [error, setError]       = useState('');
 
  const handleSubmit = async (e) => {
@@ -17,7 +17,9 @@ export default function Login({ onLogin }) {
     });
 
     if (result.success) {
-      localStorage.setItem("user", JSON.stringify(result.user));
+      //localStorage.setItem("user", JSON.stringify(result.user));
+      sessionStorage.setItem("user", JSON.stringify(result.user));
+      window.location.href = "/"; // Redirige al home
       onLogin();
     } else {
       setError("Credenciales incorrectas");

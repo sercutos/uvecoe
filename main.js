@@ -9,20 +9,6 @@ let splashWindow;
 let loginWindow;
 
 
-
-  //Crea la ventana de login
-  function createLoginWindow() {
-    loginWindow = new BrowserWindow({
-      width: 400,
-      height: 500,
-      resizable: false,
-      webPreferences: {
-        contextIsolation: true,
-        preload: path.join(__dirname, "preload.js")
-      }
-    });
-  }
-
   function createWindow() {
     splashWindow = new BrowserWindow({
       width: 400,
@@ -55,6 +41,10 @@ let loginWindow;
       },
     });
 
+    // Esto quita el menú nativo
+    mainWindow.setMenu(null);
+
+
     if (isDev) {
       mainWindow.loadURL("http://localhost:5173");
       mainWindow.webContents.openDevTools(); // Abre el herramientas de desarrollador
@@ -83,14 +73,15 @@ ipcMain.handle("login", (event, { email, password }) => {
   const user = sqlite.validateUser(email, password);
 
   if (user) {
-      if (loginWindow) loginWindow.close();
-      createMainWindow();
+      if (loginWindow) loginWindow.close();     
 
       return { success: true, user };
     }
 
     return { success: false };
 });
+
+
 
 
 app.on("window-all-closed", () => {

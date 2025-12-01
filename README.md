@@ -8,7 +8,7 @@
 
  `npm start ` → inicia la app de Electron
 ## Desarrollo
-###  abrir consola:
+###  PASO 1: Abrir consola:
  `npm run dev `
-### abrir otra consola:
+### PASO 2: Abrir otra consola:
  `npm start `
