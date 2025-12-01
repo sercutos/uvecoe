@@ -18,10 +18,12 @@ const theme = createTheme({
   },
 });
 
-function PrivateRoute({ children }) {
-  const isLogged = localStorage.getItem("logged") === "true";
+function PrivateRoute({ children }) {  
+  const isLogged = sessionStorage.getItem("user") !== null;
   return isLogged ? children : <Navigate to="/login" />;
 }
+
+
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <BrowserRouter>
