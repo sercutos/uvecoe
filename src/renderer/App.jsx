@@ -8,6 +8,7 @@ import Toolbar from "./components/Toolbar";
 
 export default function App() {
   const [users, setUsers] = useState([]);
+  const [students, setStudents] = useState([]);
   const [newUser, setNewUser] = useState("");
   const [selectedUser, setSelectedUser] = useState("");
 
@@ -16,6 +17,10 @@ export default function App() {
     setUsers(data);
   };
 
+  const loadStudents = async () => {
+    const data = await window.api.getStudents();
+    setStudents(data);
+  };
   const addUser = async () => {
     if (newUser.trim()) {
       await window.api.addUser(newUser.trim());
@@ -26,6 +31,7 @@ export default function App() {
 
   useEffect(() => {
     loadUsers();
+    loadStudents();
   }, []);
 
   return (

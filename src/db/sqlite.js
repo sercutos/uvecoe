@@ -55,16 +55,23 @@ insertDefaultIfEmpty("question", [
   { description: "pregunta de prueba", puntos: 1 }
 ]);
 
-// Obtener todos los usuarios
+// Obtener todos los usuarios de la aplicación
 function getUsers() {
   return db.prepare("SELECT * FROM user").all();
 }
+
+// Obtener todos los estudiantes de la aplicación
+function getStudents() {
+  return db.prepare("SELECT * FROM student").all();
+}
+
 // Añadir usuario
 function addUser(name) {
   return db.prepare("INSERT INTO user (name) VALUES (?)").run(name);
 }
 module.exports = {
   getUsers,
+  getStudents,
   addUser,
   validateUser,
   //addUser, validateUser
