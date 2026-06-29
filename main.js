@@ -34,6 +34,7 @@ let loginWindow;
       width: 1400,
       height: 700,
       show: false,
+      icon: path.join(__dirname, '/assets/images/icono.png'),
       webPreferences: {
         contextIsolation: true,
         preload: path.join(__dirname, "preload.js"),
@@ -66,6 +67,7 @@ ipcMain.handle("add-user", (event, name) => {
   //sqlite.addUser(name);
   return true;
 });
+ipcMain.handle("get-students", () => sqlite.getStudents());
 
 
 // IPC para login

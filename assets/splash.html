@@ -1,47 +1,119 @@
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Splash</title>
-  <!-- Fuente Roboto y Material Icons -->
-  <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-  <!-- Material Design Lite CSS -->
-  <link rel="stylesheet" href="https://code.getmdl.io/1.3.0/material.indigo-pink.min.css">
+  <title>Cargando UVECOE</title>
   <style>
     body {
       margin: 0;
+      padding: 0;
       display: flex;
       justify-content: center;
       align-items: center;
       height: 100vh;
-      background: #1976d2; /* Azul Material */
-      font-family: 'Roboto', sans-serif;
+      background: #1976d2; /* Volvemos a tu Azul Material Original */
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: white;
       flex-direction: column;
+      overflow: hidden;
+      -webkit-user-select: none; /* Evita selección de texto molesta al arrastrar */
     }
-    .logo {
-      font-size: 28px;
-      font-weight: 500;
-      margin-bottom: 20px;
+
+    .container {
+      text-align: center;
+      animation: fadeIn 0.6s ease-out;
     }
-    .mdl-spinner {
+
+    .logo-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 40px;
+    }
+
+    /* El icono del rayo ahora brilla en blanco puro sobre tu azul */
+    .logo-icon {
       width: 64px;
       height: 64px;
+      fill: #ffffff; 
+      margin-bottom: 12px;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    .logo-text {
+      font-size: 32px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: #ffffff;
+    }
+
+    /* Subtítulo adaptado para contrastar con el azul original */
+    .subtitle {
+      font-size: 14px;
+      color: #bbdefb; /* Azul muy clarito de la paleta Material */
+      margin-top: 6px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* SPINNER MATERIAL DESIGN EN CSS PURO */
+    .spinner {
+      margin: 0 auto;
+      width: 50px;
+      height: 50px;
+      position: relative;
+      animation: rotate 2s linear infinite;
+    }
+
+    .spinner circle {
+      fill: none;
+      stroke: #ffffff; /* El spinner ahora gira en color blanco */
+      stroke-width: 4;
+      stroke-linecap: round;
+      animation: dash 1.5s ease-in-out infinite;
+    }
+
+    /* ANIMACIONES */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes rotate {
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes dash {
+      0% { stroke-dasharray: 1, 150; stroke-dashoffset: 0; }
+      50% { stroke-dasharray: 90, 150; stroke-dashoffset: -35; }
+      100% { stroke-dasharray: 90, 150; stroke-dashoffset: -124; }
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.05); opacity: 1; }
+      100% { transform: scale(1); opacity: 0.9; }
     }
   </style>
 </head>
 <body>
-  <div class="logo">
-    <span class="material-icons" style="font-size:48px;">bolt</span>
-    <div>OpenECOE</div>
-  </div>
-  <!-- Spinner Material -->
-  <div class="mdl-spinner mdl-js-spinner is-active"></div>
 
-  <!-- Material Design Lite JS -->
-  <script defer src="https://code.getmdl.io/1.3.0/material.min.js"></script>
+  <div class="container">
+    <div class="logo-container">
+      <svg class="logo-icon" viewBox="0 0 24 24">
+        <path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.36.66l-.06.12C14.46 14.57 12.18 18.58 11 21z"/>
+      </svg>
+      <div class="logo-text">UVECOE</div>
+      <div class="subtitle">Plataforma de Evaluación</div>
+    </div>
+
+    <div class="spinner">
+      <svg viewBox="0 0 50 50">
+        <circle cx="25" cy="25" r="20"></circle>
+      </svg>
+    </div>
+  </div>
+
 </body>
 </html>
