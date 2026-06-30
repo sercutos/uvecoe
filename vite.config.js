@@ -4,6 +4,8 @@ import path from "path";
 
 export default defineConfig({
   root: path.resolve(__dirname, "src/renderer"), // Carpeta donde está React
+  envDir: path.resolve(__dirname),
+
   base: "./",
   build: {
     outDir: "../../dist",      // Carpeta donde se genera la build final

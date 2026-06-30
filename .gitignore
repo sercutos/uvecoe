@@ -19,3 +19,4 @@ Thumbs.db
 *.log
 NOTAS.md
 datos.txt
+.env
