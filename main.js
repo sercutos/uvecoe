@@ -141,22 +141,22 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
 
 
 ipcMain.removeHandler('db:guardarDatosIniciales');
-ipcMain.handle('db:guardarDatosIniciales', async (event, { preguntas, alumnos, usuarios }) => {
+ipcMain.handle('db:guardarDatosIniciales', async (event, { questions, alumnos, usuarios }) => {
   return db.transaction(async (trx) => {
     try {
       console.log(`[SQLITE] Procesando lote en transacción limpia...`);
 
       // 1. PROCESAR PREGUNTAS
-      if (preguntas && preguntas.length > 0) {
-        await trx('preguntas').truncate();
-        const preguntasProcesadas = preguntas.map(q => ({
+      if (questions && questions.length > 0) {
+        await trx('questions').truncate();
+        const preguntasProcesadas = questions.map(q => ({
           id: q.id,
           order: q.order || 0,
           description: q.description || '',
           reference: q.reference || '',
           area: (q.area && typeof q.area === 'object') ? (q.area.name || 'General') : (q.area || 'General')
         }));
-        await trx('preguntas').insert(preguntasProcesadas);
+        await trx('questions').insert(preguntasProcesadas);
       }
 
       // 2. 🔥 CORREGIDO: PROCESAR ALUMNOS FILTRANDO CAMPOS BASURA DE LA API ($uri, ecoe, planner)
@@ -252,13 +252,13 @@ ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
     return new Promise((resolve, reject) => {
       db.serialize(() => {
         // 1. Limpiamos preguntas anteriores de esa estación para evitar conflictos de id únicos
-        db.run("DELETE FROM preguntas", [], (err) => {
+        db.run("DELETE FROM questions", [], (err) => {
           if (err) return reject(err);
         });
 
         // 2. Preparamos el insert masivo adaptado fielmente al esquema Knex
         const stmt = db.prepare(`
-          INSERT INTO preguntas (id, reference, description, area, [order])
+          INSERT INTO questions (id, reference, description, area, [order])
           VALUES (?, ?, ?, ?, ?)
         `);
 
@@ -310,7 +310,7 @@ ipcMain.handle('db:obtener-alumnos', async () => {
 });
 
 // 2. Obtener Preguntas (Modo Offline) con Knex
-ipcMain.removeHandler('db:obtener-preguntas');
+/* ipcMain.removeHandler('db:obtener-preguntas');
 ipcMain.handle('db:obtener-preguntas', async () => {
   try {
     const rows = await db('preguntas').select('*').orderBy('order', 'asc');
@@ -331,8 +331,37 @@ ipcMain.handle('db:obtener-preguntas', async () => {
     console.error("❌ Error en Knex al obtener preguntas:", error);
     throw error;
   }
-})
+}) */
+// 2. Obtener Preguntas Filtradas por Estación (Modo Offline) con Knex
+ipcMain.removeHandler('db:obtener-preguntas');
+ipcMain.handle('db:obtener-preguntas', async (event, areaName) => {
+  try {
+    let query = db('questions');
 
+    // 🚀 Si nos pasan una estación/área específica, filtramos por ella
+    if (areaName) {
+      query = query.where('area', areaName);
+    }
+
+    const rows = await query.select('*').orderBy('order', 'asc');
+    
+    // Reconstruimos la estructura que consume tu front
+    return rows.map(row => ({
+      id: row.id,
+      order: row.order,
+      question_schema: {
+        reference: row.reference,
+        description: row.description
+      },
+      area: {
+        name: row.area
+      }
+    }));
+  } catch (error) {
+    console.error("❌ Error en Knex al obtener preguntas:", error);
+    throw error;
+  }
+});
 // 3. Guardar o Actualizar Resultado con Knex
 ipcMain.removeHandler('db:guardar-resultado');
 ipcMain.handle('db:guardar-resultado', async (event, { alumno_id, evaluacion, sincronizado }) => {

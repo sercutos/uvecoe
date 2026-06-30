@@ -8,12 +8,12 @@ const queries = {
   },
 
   // --- 🚀 NUEVO: INSERCIÓN MASIVA DE DATOS DEL ADMINISTRADOR ---
-  guardarDatosIniciales: async (preguntas, alumnos, usuarios) => {
+  guardarDatosIniciales: async (questions, alumnos, usuarios) => {
     return db.transaction(async (trx) => {
       
       // 1. Limpiamos tablas previas para evitar duplicados si reconfiguran
       await trx("resultados").del();
-      await trx("preguntas").del();
+      await trx("questions").del();
       await trx("alumnos").del();
       await trx("usuarios").del(); // 🚀 ¡Nuevo! Limpieza de usuarios anteriores
 
@@ -29,7 +29,7 @@ const queries = {
       }
 
       // 3. Mapeamos e insertamos las Preguntas
-      if (preguntas && preguntas.length > 0) {
+      if (questions && questions.length > 0) {
         const preguntasMapeadas = preguntas.map(p => ({
           id: p.id,
           reference: p.reference || p.referencia || "",
@@ -37,7 +37,7 @@ const queries = {
           area: p.area || "General",
           order: p.order ?? p.orden ?? 0
         }));
-        await trx.batchInsert("preguntas", preguntasMapeadas, 30);
+        await trx.batchInsert("questions", preguntasMapeadas, 30);
       }
 
       // 4. 🚀 NUEVO: Mapeamos e insertamos los Usuarios de la Organización
