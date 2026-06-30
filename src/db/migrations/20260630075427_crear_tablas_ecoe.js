@@ -32,12 +32,12 @@ exports.up = function (knex) {
     })
 
     // 4. TABLA PREGUNTAS (Rúbrica/Lista de cotejo de la estación)
-    .createTable("preguntas", (table) => {
+    .createTable("questions", (table) => {
       table.integer("id").primary(); // ID de la pregunta del servidor
-      table.string("reference").notNullable();
-      table.text("description").notNullable();
-      table.string("area").notNullable();
-      table.integer("order").notNullable();
+      table.string("reference");
+      table.text("description");
+      table.string("area");
+      table.integer("order");
     })
 
     // 5. TABLA RESULTADOS (Evaluaciones hechas por el médico local)
@@ -53,7 +53,7 @@ exports.up = function (knex) {
         .integer("question_id")
         .notNullable()
         .references("id")
-        .inTable("preguntas")
+        .inTable("questions")
         .onDelete("CASCADE");
       table.boolean("checked").notNullable().defaultTo(false); // Sí (true) o No (false)
       
@@ -72,7 +72,7 @@ exports.down = function (knex) {
   // Eliminamos en orden inverso por las restricciones de claves foráneas
   return knex.schema
     .dropTableIfExists("resultados")
-    .dropTableIfExists("preguntas")
+    .dropTableIfExists("questions")
     .dropTableIfExists("alumnos")
     .dropTableIfExists("usuarios")
     .dropTableIfExists("configuracion");

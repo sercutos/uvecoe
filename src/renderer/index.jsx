@@ -9,7 +9,7 @@ import SelectRoundPage from "./pages/rounds/SelectRoundPage";
 import SelectTurnPage from "./pages/turns/SelectTurnPage";
 
 import Settings from "./pages/settings/settings";
-import Questions from "./pages/questions/questions";
+import Questions from './pages/questions/QuestionPage';
 import Students from "./pages/students/students";
 import Evaluation from "./pages/evaluation/evaluation";
 

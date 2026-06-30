@@ -130,7 +130,7 @@ export default function AdminConfig({ onConfigSuccess }) {
             throw new Error(`Error en el servidor al descargar preguntas (Status: ${resPreguntas.status})`);
         }
         const dataPreguntas = await resPreguntas.json();
-        const preguntas = dataPreguntas.items || dataPreguntas;
+        const questions = dataPreguntas.items || dataPreguntas;
       
         // C) DESCARGAR ALUMNOS (PLANNER) DE LA ESTACIÓN
         setStatusMessage("⏳ Descargando lista de alumnos asignados...");
@@ -167,7 +167,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         setStatusMessage("⏳ Almacenando información en la base de datos local SQLite...");
         
         // Enviamos a Electron las preguntas, alumnos y usuarios para que haga los inserts masivos
-        await window.api.invoke("db:guardarDatosIniciales", { preguntas, alumnos, usuarios });
+        await window.api.invoke("db:guardarDatosIniciales", { questions, alumnos, usuarios });
 
         setStatusMessage("✅ ¡Portátil configurado con éxito y listo para trabajar Offline!");
         setLoading(false);
