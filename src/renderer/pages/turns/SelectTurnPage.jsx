@@ -4,7 +4,6 @@ import Grid from "@mui/material/Grid";
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import SyncIcon from '@mui/icons-material/Sync';
 import LoginIcon from '@mui/icons-material/Login';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import Toolbar from "../../components/Toolbar";
 import { useNavigate } from "react-router-dom";
 
@@ -24,7 +23,8 @@ export default function SelectTurnPage() {
 
       // 2. Filtramos para quedarnos SOLO con los turnos de ese día
       const filtrados = todosLosTurnos.filter(turno => {
-        const timestamp = turno.time_start?.$date;
+        // 🚀 CORREGIDO: Tolerancia al modo online (time_start.$date) u offline (time_start)
+        const timestamp = turno.time_start?.$date || turno.time_start;
         if (!timestamp) return false;
 
         const fechaTurno = new Date(timestamp).toLocaleDateString("es-ES", {
@@ -43,9 +43,9 @@ export default function SelectTurnPage() {
   const handleSelectTurn = (turnoId, shiftCode) => {
     // Guardamos el ID del turno elegido para las siguientes pantallas (alumnos, etc.)
     sessionStorage.setItem("selected_shift_id", turnoId);
-    sessionStorage.setItem("selected_shift_code", shiftCode);
+    sessionStorage.setItem("selected_shift_code", shiftCode || "ÚNICO");
     
-    // Avanzamos a la siguiente pantalla (por ejemplo, a la selección de estación o alumnos)
+    // Avanzamos a la pantalla de evaluación offline
     navigate("/evaluation"); 
   };
 
@@ -77,11 +77,15 @@ export default function SelectTurnPage() {
         {/* REJILLA DINÁMICA DE BOTONES DE TURNOS */}
         <Grid container spacing={3}>
           {turnosFiltrados.map((turno) => {
-            // Extraemos la hora bonita (ej: "09:30") a partir del timestamp
-            const horaBonita = new Date(turno.time_start.$date).toLocaleTimeString("es-ES", {
+            // 🚀 CORREGIDO: Extraemos la fecha soportando la variación estructural online/offline
+            const timestamp = turno.time_start?.$date || turno.time_start;
+            const horaBonita = new Date(timestamp).toLocaleTimeString("es-ES", {
               hour: "2-digit",
               minute: "2-digit"
             });
+
+            // Fallback elegante para el nombre/código del turno
+            const codigoTurno = turno.shift_code || "Único Offline";
 
             return (
               <Grid item xs={12} sm={4} key={turno.id}>
@@ -89,7 +93,7 @@ export default function SelectTurnPage() {
                   onClick={() => handleSelectTurn(turno.id, turno.shift_code)}
                   style={{
                     width: "100%",
-                    backgroundColor: "#0288d1", // Color azul para los turnos
+                    backgroundColor: "#0288d1", 
                     border: "none",
                     outline: "none",
                     color: "#fff",
@@ -107,7 +111,7 @@ export default function SelectTurnPage() {
                   onMouseOver={(e) => e.currentTarget.style.backgroundColor = "#01579b"}
                   onMouseOut={(e) => e.currentTarget.style.backgroundColor = "#0288d1"}
                 >
-                  <span>Turno {turno.shift_code}</span>
+                  <span>Turno {codigoTurno}</span>
                   <span style={{ fontSize: "0.9rem", fontWeight: "normal", opacity: 0.9 }}>
                     🕒 {horaBonita} hs
                   </span>

@@ -20,30 +20,53 @@ export default function SelectDatePage() {
     const cargarFechas = async () => {
       try {
         setLoading(true);
-        const data = await fetchWithAuth("http://localhost:8000/backend/api/v1/shifts?id_ecoe=1");
-        
-        // 🚀 1. El array real está en data.items
-        const turnos = data.items || [];
+        let turnos = [];
 
-        // Guardamos todos los turnos en caché de sesión
+        // 1. 🚀 OBTENER EL ECOE_ID DINÁMICO DESDE SQLITE LOCAL
+        const configLocal = await window.api.obtenerConfiguracion();
+        const ecoeId = configLocal?.ecoe_id;
+
+        if (!ecoeId) {
+          throw new Error("El terminal no está configurado. Por favor, inicialice el equipo.");
+        }
+
+        try {
+          // 2. INTENTO ONLINE: Consumir turnos de FastAPI
+          console.log(`[FECHAS] Solicitando turnos online para ECOE ID: ${ecoeId}...`);
+          const data = await fetchWithAuth(`http://localhost:8000/backend/api/v1/shifts?id_ecoe=${ecoeId}`);
+          turnos = data.items || data || [];
+          console.log("[FECHAS] Datos de turnos obtenidos de la API.");
+        } catch (onlineError) {
+          // 3. 🚀 MODO CONTINGENCIA OFFLINE: Si la red cae, simulamos o extraemos del entorno local
+          console.warn("[FECHAS] Servidor no alcanzable. Generando fechas en modo de contingencia...", onlineError.message);
+          
+          // Fallback inteligente: Generamos el día de hoy como fecha del examen para que el evaluador no se quede bloqueado
+          const hoy = new Date();
+          turnos = [{
+            id: 999,
+            time_start: { $date: hoy.toISOString() },
+            name: "Turno Único de Contingencia"
+          }];
+        }
+
+        // Guardamos todos los turnos resultantes en caché de sesión para las siguientes pantallas
         sessionStorage.setItem("todos_los_turnos", JSON.stringify(turnos));
 
-
-        // 🚀 2. Agrupamos y extraemos días únicos usando el timestamp de time_start.$date
+        // 4. Agrupamos y extraemos días únicos usando el timestamp de time_start.$date
         const diasMapeados = turnos.map(item => {
-          const timestamp = item.time_start?.$date;
+          const timestamp = item.time_start?.$date || item.time_start; // Tolerancia a formatos
           if (!timestamp) return null;
 
           const fechaObj = new Date(timestamp);
           
-          // Formato legible: "11/05/2026" (puedes cambiarlo a tu gusto)
+          // Formato legible: "30/06/2026"
           const formatoDia = fechaObj.toLocaleDateString("es-ES", {
             day: "2-digit",
             month: "2-digit",
             year: "numeric"
           });
 
-          // Formato visual más bonito para el botón: "Lunes, 11 de Mayo"
+          // Formato visual más bonito para el botón: "Martes, 30 de Junio"
           const textoBonito = fechaObj.toLocaleDateString("es-ES", {
             weekday: "long",
             day: "numeric",
@@ -51,12 +74,12 @@ export default function SelectDatePage() {
           });
 
           return {
-            id_dia: formatoDia, // Nos servirá para filtrar en la siguiente pantalla
-            texto: textoBonito.charAt(0).toUpperCase() + textoBonito.slice(1) // Capitalizar
+            id_dia: formatoDia, 
+            texto: textoBonito.charAt(0).toUpperCase() + textoBonito.slice(1)
           };
-        }).filter(Boolean); // Eliminamos nulos si hubiera alguno sin fecha
+        }).filter(Boolean);
 
-        // 🚀 3. Filtramos duplicados para que si hay 6 turnos el mismo día, solo salga 1 botón de ese día
+        // 5. Filtramos duplicados
         const diasUnicos = [];
         const mapeoControl = new Set();
         
@@ -70,7 +93,7 @@ export default function SelectDatePage() {
         setDiasDisponibles(diasUnicos);
       } catch (err) {
         console.error(err);
-        setError("No se pudieron cargar las fechas del examen.");
+        setError(err.message || "No se pudieron cargar las fechas del examen.");
       } finally {
         setLoading(false);
       }
@@ -80,9 +103,8 @@ export default function SelectDatePage() {
   }, []);
 
   const handleSelectDate = (dateId) => {
-    // Guardamos el día seleccionado (ej: "11/05/2026") para filtrar los turnos en la siguiente pantalla
     sessionStorage.setItem("selected_date_string", dateId);
-    navigate("/rounds");
+    navigate("/rounds"); // Siguiente paso
   };
 
   return (
@@ -100,12 +122,12 @@ export default function SelectDatePage() {
           <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd", mx: 3 }} />
           <Box display="flex" alignItems="center" gap={1} sx={{ color: "rgba(0, 0, 0, 0.38)" }}>
             <SyncIcon />
-            <Typography variant="body1">Ronda 1</Typography>
+            <Typography variant="body1">Ronda</Typography>
           </Box>
           <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd", mx: 3 }} />
           <Box display="flex" alignItems="center" gap={1} sx={{ color: "rgba(0, 0, 0, 0.38)" }}>
             <LoginIcon />
-            <Typography variant="body1">Estación 1</Typography>
+            <Typography variant="body1">Estación</Typography>
           </Box>
           <Box sx={{ flexGrow: 1, height: "1px", backgroundColor: "#ddd", mx: 3 }} />
           <Box display="flex" alignItems="center" gap={1} sx={{ color: "rgba(0, 0, 0, 0.38)" }}>

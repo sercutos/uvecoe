@@ -6,7 +6,7 @@ import SyncIcon from '@mui/icons-material/Sync';
 import LoginIcon from '@mui/icons-material/Login';
 import Toolbar from "../../components/Toolbar";
 import { useNavigate } from "react-router-dom";
-import { fetchWithAuth } from "../../utils/api"; // Asegúrate de que la ruta a api.js sea correcta
+import { fetchWithAuth } from "../../utils/api";
 
 export default function SelectRoundPage() {
   const navigate = useNavigate();
@@ -21,14 +21,41 @@ export default function SelectRoundPage() {
     const cargarRondas = async () => {
       try {
         setLoading(true);
-        // 🚀 Llamada al endpoint real de rondas
-        const data = await fetchWithAuth("http://localhost:8000/backend/api/v1/rounds?ecoe_id=1");
-        
-        // Como el endpoint devuelve directamente un Array [...], lo asignamos
-        setRondas(data || []);
+
+        // 1. 🚀 OBTENER EL ECOE_ID DINÁMICO DESDE SQLITE LOCAL
+        const configLocal = await window.api.obtenerConfiguracion();
+        const ecoeId = configLocal?.ecoe_id;
+
+        if (!ecoeId) {
+          throw new Error("El terminal no está configurado. Por favor, inicialice el equipo.");
+        }
+
+        try {
+          // 2. INTENTO ONLINE: Obtener rondas de FastAPI
+          console.log(`[ROUNDS] Cargando rondas online para ECOE ID: ${ecoeId}...`);
+          const data = await fetchWithAuth(`http://localhost:8000/backend/api/v1/rounds?ecoe_id=${ecoeId}`);
+          
+          // Soporte si la API devuelve directamente array o un objeto paginado .items
+          const listaRondas = data.items || data || [];
+          setRondas(listaRondas);
+          
+        } catch (onlineError) {
+          // 3. 🚀 MODO CONTINGENCIA OFFLINE
+          console.warn("[ROUNDS] Servidor no disponible. Generando ronda de contingencia local...", onlineError.message);
+          
+          // Generamos una ronda por defecto para que la app no se detenga sin red
+          setRondas([
+            {
+              id: 1,
+              round_code: "R-LOCAL",
+              description: "Ronda Única Offline"
+            }
+          ]);
+        }
+
       } catch (err) {
-        console.error("[ROUNDS] Error al cargar rondas:", err);
-        setError("No se pudieron cargar las rondas del examen.");
+        console.error("[ROUNDS] Error crítico:", err);
+        setError(err.message || "No se pudieron cargar las rondas del examen.");
       } finally {
         setLoading(false);
       }
@@ -38,12 +65,9 @@ export default function SelectRoundPage() {
   }, []);
 
   const handleSelectRound = (roundId, roundCode) => {
-    // Guardamos los datos de la ronda seleccionada en el "maletero" de la sesión
     sessionStorage.setItem("selected_round_id", roundId);
     sessionStorage.setItem("selected_round_code", roundCode);
-    
-    // 🚀 Siguiente paso en tu secuencia: ir a los TURNOS
-    navigate("/turns");
+    navigate("/turns"); // Siguiente paso
   };
 
   return (
@@ -96,7 +120,7 @@ export default function SelectRoundPage() {
                   onClick={() => handleSelectRound(ronda.id, ronda.round_code)}
                   style={{
                     width: "100%",
-                    backgroundColor: "#ffb74d", // Naranja estético para las rondas
+                    backgroundColor: "#ffb74d",
                     border: "none",
                     outline: "none",
                     color: "#fff",

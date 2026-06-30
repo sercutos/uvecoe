@@ -1,98 +1,39 @@
-import { useEffect, useState } from "react";
-import { 
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, 
-  Paper, Button, TextField, Select, MenuItem, Typography, Box, FormControl, InputLabel 
-} from "@mui/material";
+import React, { useEffect, useState } from "react";
+import { Box, CircularProgress, Typography } from "@mui/material";
+import AdminConfig from "./pages/admin/AdminConfig"; // Asegúrate de la ruta de tu componente
 
-import Toolbar from "./components/Toolbar";
-
-export default function App() {
-  const [users, setUsers] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [newUser, setNewUser] = useState("");
-  const [selectedUser, setSelectedUser] = useState("");
-
-  const loadUsers = async () => {
-    const data = await window.api.getUsers();
-    setUsers(data);
-  };
-
-  const loadStudents = async () => {
-    const data = await window.api.getStudents();
-    setStudents(data);
-  };
-  const addUser = async () => {
-    if (newUser.trim()) {
-      await window.api.addUser(newUser.trim());
-      setNewUser("");
-      loadUsers();
-    }
-  };
+export default function App({ children }) {
+  const [isConfigured, setIsConfigured] = useState(null);
 
   useEffect(() => {
-    loadUsers();
-    loadStudents();
+    async function checkConfiguration() {
+      try {
+        // Consultamos en SQLite si ya existe fila de configuración
+        const config = await window.api.obtenerConfiguracion();
+        setIsConfigured(!!config); // true si existe, false si es undefined/null
+      } catch (error) {
+        console.error("Error al verificar configuración local:", error);
+        setIsConfigured(false);
+      }
+    }
+    checkConfiguration();
   }, []);
 
-  return (
-    <>
-      <Toolbar />
-
-      <Box sx={{ p: 4, marginTop: "60px" }}>
-        <Typography variant="h4" gutterBottom>Usuarios</Typography>
-
-        {/* Input para agregar usuario */}
-        <Box sx={{ display: "flex", gap: 2, mb: 4 }}>
-          <TextField
-            label="Nuevo usuario"
-            value={newUser}
-            onChange={(e) => setNewUser(e.target.value)}
-          />
-          <Button variant="contained" onClick={addUser}>
-            Agregar
-          </Button>
-        </Box>
-
-        {/* Tabla */}
-        <Typography variant="h5" gutterBottom>Tabla de Usuarios</Typography>
-        <TableContainer component={Paper} sx={{ mb: 4 }}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Nombre</TableCell>
-                <TableCell>Fecha de creación</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell>{u.id}</TableCell>
-                  <TableCell>{u.name}</TableCell>
-                  <TableCell>{u.created_at}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-
-        {/* Select */}
-        <Typography variant="h5" gutterBottom>Seleccione un Usuario</Typography>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Usuario</InputLabel>
-          <Select
-            value={selectedUser}
-            label="Usuario"
-            onChange={(e) => setSelectedUser(e.target.value)}
-          >
-            {users.map((u) => (
-              <MenuItem key={u.id} value={u.id}>
-                {u.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+  // Mientras lee la base de datos local, muestra una pantalla de carga sutil
+  if (isConfigured === null) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "100vh", gap: 2 }}>
+        <CircularProgress />
+        <Typography variant="body1">Verificando estado del terminal...</Typography>
       </Box>
-    </>
-  );
+    );
+  }
+
+  // Si NO está configurado, bloqueamos la app mostrando el Panel de Administración
+  if (!isConfigured) {
+    return <AdminConfig onConfigSuccess={() => setIsConfigured(true)} />;
+  }
+
+  // Si YA está configurado, renderiza de forma transparente las pantallas hijas (el flujo normal del examen)
+  return <>{children}</>;
 }

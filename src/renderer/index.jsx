@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"; // RUTAS
-import App from "./App";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"; 
+import App from "./App"; // 🚀 Importamos nuestro Guardián de inicialización
 
 import Loginpage from "./pages/login/login";
 import SelectDatePage from "./pages/dates/SelectDatePage";
@@ -18,32 +18,31 @@ import { ThemeProvider, createTheme, CssBaseline } from "@mui/material";
 const theme = createTheme({
   palette: {
     mode: "light", 
-    //mode: "dark", 
   },
 });
 
 function PrivateRoute({ children }) {  
-  //const isLogged = localStorage.getItem("logged") === "true";
-  //return isLogged ? children : <Navigate to="/login" />;
   const hasToken = sessionStorage.getItem("token_ecoe") !== null;
-  
   return hasToken ? children : <Navigate to="/login" />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
-  <ThemeProvider theme={theme}> {/* Añadido el ThemeProvider para que MUI funcione al 100% con tu tema */}
+  <ThemeProvider theme={theme}>
     <CssBaseline />
     <BrowserRouter>
       <Routes>
-        {/* 2. La raíz protegida ahora muestra el selector de fechas que acabamos de diseñar */}
-        <Route path="/" element={<PrivateRoute><SelectDatePage /></PrivateRoute>} />
-        <Route path="/rounds" element={<PrivateRoute><SelectRoundPage /></PrivateRoute>} />
-        <Route path="/turns" element={<PrivateRoute><SelectTurnPage /></PrivateRoute>} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/questions" element={<Questions />} />
-        <Route path="/evaluation" element={<Evaluation />} />
-        <Route path="/students" element={<Students />} />
+        {/* 1. El Login se queda totalmente libre por fuera */}
         <Route path="/login" element={<Loginpage />} />
+
+        {/* 2. Las rutas operativas pasan por el Token y luego por el chequeo de SQLite de <App> */}
+        <Route path="/" element={<PrivateRoute><App><SelectDatePage /></App></PrivateRoute>} />
+        <Route path="/rounds" element={<PrivateRoute><App><SelectRoundPage /></App></PrivateRoute>} />
+        <Route path="/turns" element={<PrivateRoute><App><SelectTurnPage /></App></PrivateRoute>} />
+        
+        <Route path="/settings" element={<PrivateRoute><App><Settings /></App></PrivateRoute>} />
+        <Route path="/questions" element={<PrivateRoute><App><Questions /></App></PrivateRoute>} />
+        <Route path="/evaluation" element={<PrivateRoute><App><Evaluation /></App></PrivateRoute>} />
+        <Route path="/students" element={<PrivateRoute><App><Students /></App></PrivateRoute>} />
       </Routes>
     </BrowserRouter>
   </ThemeProvider>
