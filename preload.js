@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("api", {
   obtenerUsuarioLocal: (email) => ipcRenderer.invoke("db:obtenerUsuarioLocal", email),
   guardarUsuarioLocal: (usuario) => ipcRenderer.invoke("db:guardarUsuarioLocal", usuario),
   obtenerAlumnosLocales: () => ipcRenderer.invoke('db:obtener-alumnos'),
+  getStudents: () => ipcRenderer.invoke("db:getStudents"),
   obtenerPreguntasLocales: () => ipcRenderer.invoke('db:obtener-preguntas'),
   guardarResultadoLocal: (datos) => ipcRenderer.invoke('db:guardar-resultado', datos),
   descargarPreguntasServidor: (stationId) => ipcRenderer.invoke('db:descargar-preguntas-servidor', stationId)

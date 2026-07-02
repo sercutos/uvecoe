@@ -25,10 +25,10 @@ export default function QuestionPage() {
         
         setQuestions(data);
 
-        // Inicializamos el estado de los switches (todas en true por defecto) asociadas a su ID
+        // Inicializamos el estado de los switches con los IDs reales
         const initialAnswers = {};
         data.forEach(q => {
-          initialAnswers[q.id] = true;
+          initialAnswers[q.id] = true; // Por defecto marcadas
         });
         setAnswers(initialAnswers);
 
@@ -40,9 +40,9 @@ export default function QuestionPage() {
     }
 
     fetchPreguntas();
-  }, [currentEstacion]); // Se vuelve a ejecutar automáticamente si cambias de estación
+  }, [currentEstacion]);
 
-  // Alternar el switch usando el ID de la pregunta
+  // Cambiar el valor del switch de una pregunta específica
   const handleToggle = (questionId) => {
     setAnswers(prev => ({
       ...prev,
@@ -50,18 +50,46 @@ export default function QuestionPage() {
     }));
   };
 
-  const handleSave = () => {
-    // 🧠 Formateamos la salida para el formato JSON que espera tu backend {"selected": 1} o similar
-    const resultadoJSON = questions.map(q => ({
-      pregunta_id: q.id,
-      respuesta: {
-        selected: answers[q.id] ? 1 : 0
-      }
-    }));
+  const handleSave = async () => {
+    try {
+      // 📋 El ID del alumno evaluado (Sustituye por el ID real del alumno que esté seleccionado en tu vista)
+      const id_student = 12; 
+      // 📋 El ID de la estación activa (Sustituye por tu estado real o config)
+      const id_station = 5; 
 
-    console.log("Estructura lista para guardar en SQLite o mandar a API:", resultadoJSON);
-    alert("Respuestas capturadas con éxito en memoria local.");
-  };
+      // Construimos el array de filas listas para meter a SQLite
+      const respuestasParaGuardar = questions.map(q => {
+        const isChecked = !!answers[q.id];
+
+        // 🧠 Construimos exactamente el answer_schema que exige tu FastAPI
+        const schema = {
+          type: "checkbox",
+          selected: isChecked ? [{ id_option: 1 }] : []
+        };
+
+        return {
+          id_student: id_student,
+          id_question: q.id,
+          id_station: id_station,
+          points: isChecked ? 1 : 0, 
+          answer_schema: JSON.stringify(schema), 
+          sincronizado: false
+        };
+      });
+
+      console.log("Estructura lista para guardar en SQLite:", respuestasParaGuardar);
+
+      // Enviamos el lote a guardar en la SQLite mediante IPC (Asegúrate de que coincida con el nombre de tu main.js)
+      const response = await window.api.invoke("db:guardar-resultado", respuestasParaGuardar);
+      
+      if (response.success) {
+        alert("🎉 Respuestas de la evaluación guardadas localmente con éxito.");
+      }
+    } catch (error) {
+      console.error("Error al guardar resultados:", error);
+      alert("❌ Error al guardar las respuestas localmente.");
+    }
+  }; // 👈 ¡Aquí estaba el lío de las llaves corregido!
 
   return (
     <React.Fragment>
@@ -71,7 +99,7 @@ export default function QuestionPage() {
         <Paper elevation={3} sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#006687' }}>
-              Evaluación del Paciente
+              Evaluación del Paciente 
             </Typography>
             <Typography variant="subtitle2" color="text.secondary">
               Estación activa: <strong>{currentEstacion}</strong>
@@ -87,47 +115,61 @@ export default function QuestionPage() {
               No hay preguntas configuradas para esta estación en la base de datos local.
             </Typography>
           ) : (
-            <Grid container spacing={2}>
-              {questions.map((q, index) => (
-                <Grid item xs={12} key={q.id}>
-                  <Box
-                    sx={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      p: 2,
-                      borderBottom: index !== questions.length - 1 ? "1px solid #ddd" : "none"
-                    }}
-                  >
-                    <Box sx={{ pr: 2 }}>
-                      <Typography variant="caption" color="text.secondary" display="block">
-                        {q.question_schema.reference || `Ref: PREG-${q.id}`}
-                      </Typography>
-                      <Typography variant="body1">
-                        {q.question_schema.description}
-                      </Typography>
+            <Grid container spacing={2} direction="column">
+              {[...questions]
+                .sort((a, b) => a.order - b.order)
+                .map((q) => (
+                  <Grid item xs={12} key={q.id}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        gap: 2,
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        p: 2,
+                        borderBottom: "1px solid #ddd"
+                      }}
+                    >
+                      {/* REFERENCIA */}
+                      <Box sx={{ minWidth: 120 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {q.question_schema?.reference || `Ref: PREG-${q.id}`}
+                        </Typography>
+                      </Box>
+
+                      {/* DESCRIPCIÓN */}
+                      <Box sx={{ flex: 1, px: 2 }}>
+                        <Typography variant="body1">
+                          {q.question_schema?.description || 'Sin descripción disponible'}
+                        </Typography>
+                      </Box>
+
+                      {/* INTERRUPTOR (SWITCH) */}
+                      <Box>
+                        <Switch
+                          checked={!!answers[q.id]}
+                          onChange={() => handleToggle(q.id)}
+                          color="primary"
+                        />
+                      </Box>
                     </Box>
-                    <Switch
-                      checked={!!answers[q.id]} // Forzamos booleano seguro
-                      onChange={() => handleToggle(q.id)}
-                      color="primary"
-                    />
-                  </Box>
-                </Grid>
-              ))}
+                  </Grid>
+                ))}
             </Grid>
           )}
 
-          <Box sx={{ textAlign: "center", mt: 3 }}>
-            <Button 
-              variant="contained" 
-              onClick={handleSave}
-              disabled={questions.length === 0}
-              sx={{ bgcolor: '#006687', '&:hover': { bgcolor: '#004c66' } }}
-            >
-              Guardar respuestas
-            </Button>
-          </Box>
+          {questions.length > 0 && (
+            <Box sx={{ textAlign: "center", mt: 3 }}>
+              <Button 
+                variant="contained" 
+                onClick={handleSave}
+                sx={{ bgcolor: '#006687', '&:hover': { bgcolor: '#004c66' } }}
+              >
+                Guardar respuestas
+              </Button>
+            </Box>
+          )}
+   
         </Paper>
       </Container>
     </React.Fragment>

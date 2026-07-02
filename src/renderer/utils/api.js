@@ -14,10 +14,8 @@ export const fetchWithAuth = async (url, options = {}) => {
     ...options.headers,
   };
 
-  // 2. Si tenemos token, lo inyectamos en la cabecera de Autorización
+  // 2. Si tenemos token, lo inyectamos en la cabecera de Autorización (Bearer)
   if (token) {
-    // ⚠️ ¡OJO AQUÍ! Algunos backends de FastAPI esperan "Bearer token" y otros solo "token" o "JWT token".
-    // Por ahora usamos el estándar Bearer.
     headers["Authorization"] = `Bearer ${token}`;
   } else {
     console.warn("[API] ¡Advertencia! No hay ningún token en sessionStorage.");

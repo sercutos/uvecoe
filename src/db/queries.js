@@ -21,10 +21,12 @@ const queries = {
       if (alumnos && alumnos.length > 0) {
         const alumnosMapeados = alumnos.map(a => ({
           id: a.id,
+          id_planner: a.id_planner,
           planner_order: a.planner_order ?? a.orden ?? 0, 
           name: a.name || a.nombre || "",
           surnames: a.surnames || a.apellidos || ""
         }));
+        console.log("STUDENTS:", alumnosMapeados);
         await trx.batchInsert("alumnos", alumnosMapeados, 30);
       }
 

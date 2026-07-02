@@ -1,12 +1,17 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
-const db = require("./src/db/knex");        
+const fs = require("fs");
 const queries = require("./src/db/queries");
 
 const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow;
 let splashWindow;
+let db; 
+
+function getDbPath() {
+  return path.join(__dirname, "data", "uvecoe.db");
+}
 
 function createWindow() {
   splashWindow = new BrowserWindow({
@@ -56,13 +61,22 @@ function createMainWindow() {
 
 // 🚀 ARRANQUE DE LA APP + MIGRACIONES AUTOMÁTICAS DE SQLITE
 app.whenReady().then(async () => {
+  const dbPath = getDbPath();
   try {
     console.log("[MIGRACIONES] Comprobando actualizaciones de la base de datos local...");
+    if (isDev && fs.existsSync(dbPath)) {
+      console.log("[DEV] Borrando DB...");
+      fs.unlinkSync(dbPath);
+    }
     
-    // Ejecuta las migraciones pendientes usando el Node de Electron nativo
+    db = require("./src/db/knex");
+    console.log("[DB] Ejecutando migraciones...");
     await db.migrate.latest(); 
     
     console.log("[MIGRACIONES] Base de datos local al día.");
+
+    //const cols = await db.raw("PRAGMA table_info(questions)");
+    //console.log("📦 ESTRUCTURA QUESTIONS:", cols);
   } catch (error) {
     console.error("[ERROR MIGRACIONES INTERNAS]:", error);
   }
@@ -139,41 +153,55 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
   }
 });
 
-
 ipcMain.removeHandler('db:guardarDatosIniciales');
-ipcMain.handle('db:guardarDatosIniciales', async (event, { questions, alumnos, usuarios }) => {
+ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, questions, alumnos, usuarios }) => {
   return db.transaction(async (trx) => {
     try {
       console.log(`[SQLITE] Procesando lote en transacción limpia...`);
 
       // 1. PROCESAR PREGUNTAS
       if (questions && questions.length > 0) {
-        await trx('questions').truncate();
+        await trx('questions').del();
         const preguntasProcesadas = questions.map(q => ({
           id: q.id,
           order: q.order || 0,
-          description: q.description || '',
-          reference: q.reference || '',
-          area: (q.area && typeof q.area === 'object') ? (q.area.name || 'General') : (q.area || 'General')
+          description: q.question_schema?.description || '',
+          reference: q.question_schema?.reference || '',
+          area: q.area?.name || 'General',
+          id_station: stationId || null,
+          id_block: id_block,
+          question_schema: JSON.stringify(q.question_schema || {})
         }));
-        await trx('questions').insert(preguntasProcesadas);
-      }
 
+        await trx('questions').insert(preguntasProcesadas);
+        //console.log("ROWS DEBUG preguntasProcesadas:", preguntasProcesadas[0]);
+      }
+      
       // 2. 🔥 CORREGIDO: PROCESAR ALUMNOS FILTRANDO CAMPOS BASURA DE LA API ($uri, ecoe, planner)
       if (alumnos && alumnos.length > 0) {
-        await trx('alumnos').truncate(); // Vacíamos la tabla primero
+        await trx('alumnos').del(); // Vacíamos la tabla primero
+        // Obtener el ID del planner       
+        const getPlannerId = (planner) => {
+          if (!planner?.$ref) return null;
+
+          const match = planner.$ref.match(/\/(\d+)$/);
+          return match ? Number(match[1]) : null;
+        };
+
 
         const alumnosProcesados = alumnos.map(a => ({
           id: a.id,
           dni: a.dni || '',
           name: a.name || '',
           surnames: a.surnames || '',
+          id_planner: getPlannerId(a.planner),
           planner_order: a.planner_order || 0
-          // 🚀 Aquí ignoramos deliberadamente a.$uri, a.ecoe, y a.planner evitando que salte el error
         }));
 
         await trx('alumnos').insert(alumnosProcesados);
+        //console.log("STUDENTS:", alumnos);
         console.log(`[SQLITE] Insertados ${alumnosProcesados.length} alumnos procesados.`);
+        
       }
 
   // 3. PROCESAR USUARIOS (Blindado contra arrays de roles u objetos vacíos)
@@ -218,75 +246,46 @@ ipcMain.handle('db:guardarDatosIniciales', async (event, { questions, alumnos, u
 ipcMain.removeHandler('db:descargar-preguntas-servidor');
 ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
   try {
-    console.log(`[SQLITE] Iniciando descarga de rúbrica para estación: ${stationId}`);
 
-    // ==========================================
-    // PASO B ORIGINAL: Obtener el bloque
-    // ==========================================
     const blocksRes = await fetch(`http://localhost:8000/backend/api/v1/blocks?station_id=${stationId}`);
-    if (!blocksRes.ok) throw new Error(`Error API al traer bloques: ${blocksRes.statusText}`);
-    
     const blocksData = await blocksRes.json();
-    const block = blocksData?.items?.[0] || (Array.isArray(blocksData) ? blocksData[0] : null);
-    
-    if (!block) {
-      throw new Error(`La estación ${stationId} no tiene bloques configurados.`);
-    }
+    const block = blocksData?.items?.[0];
 
-    // ==========================================
-    // PASO C ORIGINAL: Obtener preguntas del bloque
-    // ==========================================
-    const questionsRes = await fetch(`http://localhost:8000/backend/api/v1/questions?station_id=${stationId}&block_id=${block.id}`);
-    if (!questionsRes.ok) throw new Error(`Error API al traer preguntas: ${questionsRes.statusText}`);
-    
+    if (!block) throw new Error("No block");
+
+    const questionsRes = await fetch(
+      `http://localhost:8000/backend/api/v1/questions?station_id=${stationId}&block_id=${block.id}&per_page=500`
+    );
+
     const questionsData = await questionsRes.json();
-    const rawQuestions = Array.isArray(questionsData) ? questionsData : (questionsData.items || []);
+    const rawQuestions = Array.isArray(questionsData) ? questionsData : questionsData.items || [];
 
-    if (rawQuestions.length === 0) {
-      return { success: true, count: 0, message: "El bloque vino vacío de preguntas." };
-    }
+    return await db.transaction(async (trx) => {
 
-    // ==========================================
-    // PERSISTENCIA EN SQLITE: Transacción masiva
-    // ==========================================
-    return new Promise((resolve, reject) => {
-      db.serialize(() => {
-        // 1. Limpiamos preguntas anteriores de esa estación para evitar conflictos de id únicos
-        db.run("DELETE FROM questions", [], (err) => {
-          if (err) return reject(err);
-        });
+      await trx('questions').del();
 
-        // 2. Preparamos el insert masivo adaptado fielmente al esquema Knex
-        const stmt = db.prepare(`
-          INSERT INTO questions (id, reference, description, area, [order])
-          VALUES (?, ?, ?, ?, ?)
-        `);
+      const rows = rawQuestions.map(q => ({
+        id: q.id,
+        area: typeof q.area === 'object' ? q.area?.name : q.area || 'General',
+        id_station: stationId,
+        order: q.order || 0,
+        id_block: block.id,
+        reference: q.question_schema?.reference || '',
+        description: q.question_schema?.description || '',
+        question_schema: JSON.stringify(q.question_schema || {})
+      }));
+      // INSERT DB
+      //console.log("ROWS DEBUG:", rows[0]);
+      console.log("DEBUG: block.id:", block.id);
+      console.log("DEBUG: Primera fila:", rows[0]);
+      await trx('questions').insert(rows);
 
-        rawQuestions.forEach((q) => {
-          stmt.run(
-            q.id,                                      // table.integer("id").primary()
-            q.question_schema?.reference || `Q-${q.id}`, // table.string("reference")
-            q.question_schema?.description || "",      // table.text("description")
-            q.area?.name || "General",                // table.string("area")
-            q.order || 0                               // table.integer("order")
-          );
-        });
-
-        stmt.finalize((err) => {
-          if (err) {
-            console.error("❌ Error al persistir preguntas masivas:", err);
-            reject(err);
-          } else {
-            console.log(`✅ Sincronizadas con éxito ${rawQuestions.length} preguntas en SQLite.`);
-            resolve({ success: true, count: rawQuestions.length });
-          }
-        });
-      });
+      return { success: true, count: rows.length };
     });
 
-  } catch (error) {
-    console.error("❌ Error en descarga masiva desde API:", error);
-    throw error;
+  } catch (e) {
+    console.error(e);
+    throw e;
   }
 });
 
@@ -294,7 +293,6 @@ ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
 ipcMain.removeHandler('db:obtener-alumnos');
 ipcMain.handle('db:obtener-alumnos', async () => {
   try {
-    // En Knex: db('tabla').select('*').orderBy('columna', 'asc')
     const rows = await db('alumnos').select('*').orderBy('planner_order', 'asc');
     
     // Mapeamos al formato que espera tu vista
@@ -308,85 +306,105 @@ ipcMain.handle('db:obtener-alumnos', async () => {
     throw error;
   }
 });
-
-// 2. Obtener Preguntas (Modo Offline) con Knex
-/* ipcMain.removeHandler('db:obtener-preguntas');
-ipcMain.handle('db:obtener-preguntas', async () => {
+// TODOS Los alumnos
+ipcMain.handle("db:getStudents", async () => {
   try {
-    const rows = await db('preguntas').select('*').orderBy('order', 'asc');
-    
-    // Reconstruimos la estructura anidada que consume tu front (question_schema y area)
-    return rows.map(row => ({
-      id: row.id,
-      order: row.order,
-      question_schema: {
-        reference: row.reference,
-        description: row.description
-      },
-      area: {
-        name: row.area
-      }
-    }));
+    return await db("alumnos")
+      .select("*")
+      //.orderBy("id_planner", "asc");
+      .orderByRaw("CAST(SUBSTR(dni, 2) AS INTEGER) ASC");
   } catch (error) {
-    console.error("❌ Error en Knex al obtener preguntas:", error);
-    throw error;
-  }
-}) */
-// 2. Obtener Preguntas Filtradas por Estación (Modo Offline) con Knex
-ipcMain.removeHandler('db:obtener-preguntas');
-ipcMain.handle('db:obtener-preguntas', async (event, areaName) => {
-  try {
-    let query = db('questions');
-
-    // 🚀 Si nos pasan una estación/área específica, filtramos por ella
-    if (areaName) {
-      query = query.where('area', areaName);
-    }
-
-    const rows = await query.select('*').orderBy('order', 'asc');
-    
-    // Reconstruimos la estructura que consume tu front
-    return rows.map(row => ({
-      id: row.id,
-      order: row.order,
-      question_schema: {
-        reference: row.reference,
-        description: row.description
-      },
-      area: {
-        name: row.area
-      }
-    }));
-  } catch (error) {
-    console.error("❌ Error en Knex al obtener preguntas:", error);
+    console.error(error);
     throw error;
   }
 });
-// 3. Guardar o Actualizar Resultado con Knex
-ipcMain.removeHandler('db:guardar-resultado');
-ipcMain.handle('db:guardar-resultado', async (event, { alumno_id, evaluacion, sincronizado }) => {
-  try {
-    // Verificamos si ya existe un examen previo de este alumno
-    const existe = await db('resultados').where({ alumno_id }).first();
 
-    if (existe) {
-      // Si existe, actualizamos por si corrigió alguna pregunta
-      await db('resultados')
-        .where({ alumno_id })
-        .update({ evaluacion, sincronizado });
-      console.log(`💾 Resultado ACTUALIZADO en SQLite para alumno ID: ${alumno_id}`);
-    } else {
-      // Si no existe, hacemos el insert insertando el registro
-      await db('resultados')
-        .insert({ alumno_id, evaluacion, sincronizado });
-      console.log(`💾 Resultado INSERTADO en SQLite para alumno ID: ${alumno_id}`);
+// 2. Obtener Preguntas (Modo Offline) con Knex
+ipcMain.handle('db:obtener-preguntas', async (event, { stationId, blockId }) => {
+  try {
+    let query = db('questions');
+
+    if (stationId) {
+      query = query.where('id_station', stationId);
     }
 
-    return { success: true };
+    if (blockId) {
+      query = query.where('id_block', blockId);
+    }
+
+    const rows = await query.orderBy('order', 'asc');
+
+    return rows.map(row => ({
+      id: row.id,
+      order: row.order,
+      question_schema: {
+        reference: row.reference,
+        description: row.description
+      },
+      area: {
+        name: row.area
+      }
+    }));
+
   } catch (error) {
-    console.error("❌ Error en Knex al guardar resultado:", error);
+    console.error("❌ Error obteniendo preguntas:", error);
     throw error;
   }
+});
+
+ipcMain.removeHandler('db:obtener-respuestas-alumno');
+ipcMain.handle('db:obtener-respuestas-alumno', async (event, { id_student, id_station }) => {
+  try {
+    const respuestas = await db('resultados')
+      .where({ id_student, id_station })
+      .select('id_question', 'points');
+    return respuestas; // Devolverá un array como: [{ id_question: 1, points: 1 }, ...]
+  } catch (error) {
+    console.error("❌ Error al recuperar respuestas locales:", error);
+    return [];
+  }
+});
+
+// 3. Guardar o Actualizar Resultados por Pregunta (Espejo de FastAPI) con Knex
+ipcMain.removeHandler('db:guardar-resultado');
+ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
+  return db.transaction(async (trx) => {
+    try {
+      // Recorremos el lote de preguntas que nos manda el frontend para ese alumno
+      for (const resultado of listaResultados) {
+        
+        // Buscamos si ya existe una nota previa del alumno para ESTA pregunta concreta
+        const existe = await trx('resultados')
+          .where({ 
+            id_student: resultado.id_student, 
+            id_question: resultado.id_question 
+          })
+          .first();
+
+        if (existe) {
+          // Si el médico ha cambiado el switch, actualizamos los puntos y el JSON
+          await trx('resultados')
+            .where({ id: existe.id })
+            .update({
+              points: resultado.points,
+              answer_schema: resultado.answer_schema,
+              sincronizado: false,
+              evaluado_en: db.fn.now() // Actualizamos la estampa de tiempo
+            });
+        } else {
+          // Si es la primera vez que se evalúa esta pregunta para el alumno, la insertamos
+          await trx('resultados').insert(resultado);
+        }
+      }
+
+      console.log(`💾 Lote de ${listaResultados.length} respuestas procesado con éxito en SQLite.`);
+      return { success: true };
+      
+    } catch (error) {
+      console.error("❌ Error en Knex al guardar el lote de resultados:", error);
+      throw error;
+    }
+  });
 });
 
 // Control de cierre de la app

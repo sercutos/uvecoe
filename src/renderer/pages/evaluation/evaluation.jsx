@@ -80,7 +80,7 @@ export default function EvaluationPage() {
           const blocksData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/blocks?station_id=${stationIdConfigurado}`);
           const block = blocksData?.items?.[0] || (Array.isArray(blocksData) ? blocksData[0] : null);
           if (block) {
-            const questionsData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/questions?station_id=${stationIdConfigurado}&block_id=${block.id}`);
+            const questionsData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/questions?station_id=${stationIdConfigurado}&block_id=${block.id}&per_page=500`);
             rawQuestions = Array.isArray(questionsData) ? questionsData : (questionsData.items || []);
           }
 
@@ -150,7 +150,7 @@ export default function EvaluationPage() {
 
         setStudents(reorderedStudents);
         setQuestions(mappedQuestions);
-        setAnswers(mappedQuestions.map(() => true));
+        setAnswers(mappedQuestions.map(() => false)); // valor respuesta por defecto
 
       } catch (err) {
         console.error("[ERROR EVALUACIÓN GLOBAL]:", err);
@@ -215,6 +215,39 @@ export default function EvaluationPage() {
     return cleanArrStudents;
   };
 
+  // --- Recuperar las respuestas del alumno de SQLite al cambiar de alumno o iniciar la pantalla
+  useEffect(() => {
+    const cargarRespuestasGuardadas = async () => {
+      if (!currentStudent || questions.length === 0) return;
+
+      try {
+        const configLocal = await window.api.obtenerConfiguracion();
+        const id_station = configLocal?.station_id || 1;
+
+        // 1. Pedimos a SQLite las respuestas que ya existan para este alumno en esta estación
+        const respuestasGuardadas = await window.api.invoke("db:obtener-respuestas-alumno", {
+          id_student: currentStudent.id_estudiante,
+          id_station: Number(id_station)
+        });
+
+        // 2. Creamos el array de estados mapeando contra nuestras preguntas en pantalla
+        // Si el alumno tiene fila guardada con points === 1, se pone true; si no, false.
+        const nuevosSwitches = questions.map((q) => {
+          const registroGuardado = respuestasGuardadas.find(r => r.id_question === q.id_pregunta_db);
+          return registroGuardado ? registroGuardado.points === 1 : false;
+        });
+
+        setAnswers(nuevosSwitches);
+
+      } catch (err) {
+        console.error("Error al recuperar el progreso del alumno de SQLite:", err);
+        // Fallback: si falla o no hay nada, por defecto todo a false (a cero)
+        setAnswers(questions.map(() => false));
+      }
+    };
+
+    cargarRespuestasGuardadas();
+  }, [currentStudentIndex, currentStudent, questions]); // 🚀 Se dispara al cambiar de alumno o cargar preguntas
   // --- CONTROL DEL TECLADO ---
   useEffect(() => {
     const manejarTeclado = (event) => {
@@ -247,47 +280,62 @@ export default function EvaluationPage() {
   const handleProcessEvaluation = async () => {
     if (!currentStudent) return;
 
-    // Estructuramos el payload de evaluación
-    const evaluacionParaGuardar = questions.map((q, idx) => ({
-      question_id: q.id_pregunta_db,
-      reference: q.id,
-      checked: answers[idx] ? 1 : 0 // Normalizado a binario para SQLite
-    }));
+    // 1. Conseguimos el ID de la estación de la configuración guardada
+    const configLocal = await window.api.obtenerConfiguracion();
+    const id_station = configLocal?.station_id || 1;
 
-    console.log(`[GUARDANDO LOCALMENTE] Alumno ID ${currentStudent.id_estudiante}:`, evaluacionParaGuardar);
+    // 2. Construimos el ARRAY PLANO idéntico al que espera recibir el main.js e iterar
+    const respuestasParaGuardar = questions.map((q, idx) => {
+      const isChecked = !!answers[idx];
+
+      // Construimos el answer_schema tal como lo quiere tu FastAPI
+      const schema = {
+        type: "checkbox",
+        selected: isChecked ? [{ id_option: 1 }] : []
+      };
+
+      return {
+        id_student: currentStudent.id_estudiante, // Mapeado a la columna real
+        id_question: q.id_pregunta_db,            // Mapeado a la columna real
+        id_station: Number(id_station),
+        points: isChecked ? 1 : 0,
+        answer_schema: JSON.stringify(schema),     // Guardado como String JSON en SQLite
+        sincronizado: false
+      };
+    });
+
+    console.log(`[GUARDANDO LOCALMENTE] Enviando lote plano a SQLite:`, respuestasParaGuardar);
     
-    // 🚀 ENVÍO DIRECTO A LA BASE DE DATOS LOCAL A TRAVÉS DE IPC
-    if (window.api && window.api.guardarResultadoLocal) {
+    // 3. Enviamos el ARRAY directo al IPC
+    if (window.api && window.api.invoke) {
       try {
-        await window.api.guardarResultadoLocal({
-          alumno_id: currentStudent.id_estudiante,
-          evaluacion: JSON.stringify(evaluacionParaGuardar),
-          sincronizado: 0 // Flag para saber que hay que subirlo a producción luego
-        });
+        // 🚀 Usamos .invoke llamando directamente al canal con el array plano como argumento
+        await window.api.invoke("db:guardar-resultado", respuestasParaGuardar);
+        console.log("💾 Lote guardado con éxito de forma atómica.");
       } catch (errDb) {
         console.error("[EVALUATION] Fallo al escribir resultado en SQLite:", errDb);
       }
     }
 
+    // --- El resto de tu lógica de pasar al siguiente alumno sigue exactamente igual ---
     const isLastStudent = currentStudentIndex === students.length - 1;
 
     if (!isLastStudent) {
       setCurrentStudentIndex(currentStudentIndex + 1);
-      setAnswers(questions.map(() => true)); 
+      setAnswers(questions.map(() => false)); // Los dejamos apagados (0) por defecto
       
       setMinutes(7);
       setSeconds(0);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
-      navigate("/turns"); // Fin del bucle de alumnos
+      navigate("/turns");
     }
   };
 
   const handlePrevStudent = () => {
     if (currentStudentIndex > 0) {
       setCurrentStudentIndex(currentStudentIndex - 1);
-      setAnswers(questions.map(() => true));
     }
   };
 
