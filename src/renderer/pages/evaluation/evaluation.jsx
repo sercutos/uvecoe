@@ -268,68 +268,72 @@ export default function EvaluationPage() {
     return () => window.removeEventListener("keydown", manejarTeclado);
   }, [currentStudentIndex, students, answers, questions]);
   
-  const handleToggle = (index) => {
-    const newAnswers = [...answers];
-    newAnswers[index] = !newAnswers[index];
-    setAnswers(newAnswers);
-  };
-
+    // ==========================================
+  // 🚀 GUARDADO INMEDIATO POR CADA SWITCH (ULTRA SEGURO)
   // ==========================================
-  // LOGICA PRINCIPAL DE GUARDADO EN SQLITE LOCAL
-  // ==========================================
-  const handleProcessEvaluation = async () => {
+  const handleToggle = async (index) => {
     if (!currentStudent) return;
 
-    // 1. Conseguimos el ID de la estación de la configuración guardada
+    // 1. Calculamos el nuevo estado que va a tener el switch inmediatamente
+    const nuevoValorSwitch = !answers[index];
+
+    // 2. Actualizamos el estado visual (UI) al instante para que no tenga lag
+    const newAnswers = [...answers];
+    newAnswers[index] = nuevoValorSwitch;
+    setAnswers(newAnswers);
+
+    // 3. Obtenemos la pregunta modificada y la configuración de la estación
+    const q = questions[index];
     const configLocal = await window.api.obtenerConfiguracion();
     const id_station = configLocal?.station_id || 1;
 
-    // 2. Construimos el ARRAY PLANO idéntico al que espera recibir el main.js e iterar
-    const respuestasParaGuardar = questions.map((q, idx) => {
-      const isChecked = !!answers[idx];
+    // 4. Creamos el esquema idéntico al que espera tu API
+    const schema = {
+      type: "checkbox",
+      selected: nuevoValorSwitch ? [{ id_option: 1 }] : []
+    };
 
-      // Construimos el answer_schema tal como lo quiere tu FastAPI
-      const schema = {
-        type: "checkbox",
-        selected: isChecked ? [{ id_option: 1 }] : []
-      };
+    // 5. Preparamos el payload en formato array (como lo requiere el main.js)
+    // Pasamos solo UN elemento, el que acaba de mutar.
+    const loteFilaUnica = [{
+      id_student: currentStudent.id_estudiante,
+      id_question: q.id_pregunta_db,
+      id_station: Number(id_station),
+      points: nuevoValorSwitch ? 1 : 0,
+      answer_schema: JSON.stringify(schema),
+      sincronizado: false
+    }];
 
-      return {
-        id_student: currentStudent.id_estudiante, // Mapeado a la columna real
-        id_question: q.id_pregunta_db,            // Mapeado a la columna real
-        id_station: Number(id_station),
-        points: isChecked ? 1 : 0,
-        answer_schema: JSON.stringify(schema),     // Guardado como String JSON en SQLite
-        sincronizado: false
-      };
-    });
-
-    console.log(`[GUARDANDO LOCALMENTE] Enviando lote plano a SQLite:`, respuestasParaGuardar);
-    
-    // 3. Enviamos el ARRAY directo al IPC
+    // 6. Impactamos en SQLite en segundo plano
     if (window.api && window.api.invoke) {
       try {
-        // 🚀 Usamos .invoke llamando directamente al canal con el array plano como argumento
-        await window.api.invoke("db:guardar-resultado", respuestasParaGuardar);
-        console.log("💾 Lote guardado con éxito de forma atómica.");
+        await window.api.invoke("db:guardar-resultado", loteFilaUnica);
+        console.log(`⚡ [AUTO-GUARDADO] Pregunta ${q.id} guardada como: ${nuevoValorSwitch ? 'SÍ' : 'NO'}`);
       } catch (errDb) {
-        console.error("[EVALUATION] Fallo al escribir resultado en SQLite:", errDb);
+        console.error("❌ Fallo en el auto-guardado inmediato:", errDb);
       }
     }
+  };
+  
+  // ==========================================
+  // LÓGICA DE NAVEGACIÓN (AVANZA)
+  // ==========================================
+  const handleProcessEvaluation = () => {
+    if (!currentStudent) return;
 
-    // --- El resto de tu lógica de pasar al siguiente alumno sigue exactamente igual ---
     const isLastStudent = currentStudentIndex === students.length - 1;
 
     if (!isLastStudent) {
+      // Avanzamos de índice. El useEffect que pusimos en el paso anterior
+      // se encargará de leer automáticamente de SQLite lo que tenga el siguiente alumno.
       setCurrentStudentIndex(currentStudentIndex + 1);
-      setAnswers(questions.map(() => false)); // Los dejamos apagados (0) por defecto
       
       setMinutes(7);
       setSeconds(0);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
-      navigate("/turns");
+      navigate("/turns"); // Fin del examen
     }
   };
 
