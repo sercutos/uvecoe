@@ -414,6 +414,80 @@ ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
   });
 });
 
+// -- Envio respuestas el servidor --// 
+
+ipcMain.removeHandler('db:sincronizar-respuestas-al-servidor');
+ipcMain.handle('db:sincronizar-respuestas-al-servidor', async () => {
+  try {
+    // 1. Extraemos de SQLite todas las respuestas locales que aún NO se han subido
+    const registrosPendientes = await db('resultados')
+      .where({ sincronizado: false }) // o 0, según guardes el booleano
+      .select('*');
+
+    if (registrosPendientes.length === 0) {
+      return { success: true, message: "No hay respuestas pendientes de sincronizar.", count: 0 };
+    }
+
+    // 2. Mapeamos los datos al formato exacto que te está pidiendo el Swagger
+    const payloadParaFastAPI = registrosPendientes.map(row => {
+      let schemaParseado = {};
+      try {
+        // Como en SQLite lo guardamos con JSON.stringify(), lo volvemos a convertir a objeto JSON real
+        schemaParseado = typeof row.answer_schema === 'string' 
+          ? JSON.parse(row.answer_schema) 
+          : row.answer_schema;
+      } catch (e) {
+        console.error("Error al parsear answer_schema de la fila", row.id, e);
+        schemaParseado = { type: "checkbox", selected: [] }; // Fallback de seguridad
+      }
+
+      return {
+        id_student: Number(row.id_student),
+        id_question: Number(row.id_question),
+        id_station: Number(row.id_station),
+        points: Number(row.points),
+        answer_schema: schemaParseado // 🚀 Aquí entra como el objeto que pide Swagger
+      };
+    });
+
+    console.log(`📡 Enviando un lote masivo de ${payloadParaFastAPI.length} respuestas a FastAPI...`);
+
+    // 3. Enviamos el lote mediante un único POST HTTP masivo
+    const response = await fetch('http://localhost:8000/backend/api/v1/answers/bulk-sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 'Authorization': `Bearer ${tuToken}` <- Añádelo si tu endpoint requiere token
+      },
+      body: JSON.stringify(payloadParaFastAPI)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`El servidor respondió con código ${response.status}: ${errorText}`);
+    }
+
+    const dataJson = await response.json();
+    console.log("🎉 Servidor FastAPI respondió con éxito:", dataJson);
+
+    // 4. Si el servidor las procesó correctamente, actualizamos el portátil poniendo sincronizado = true
+    const idsSincronizados = registrosPendientes.map(p => p.id);
+    await db('resultados')
+      .whereIn('id', idsSincronizados)
+      .update({ sincronizado: true }); // o 1
+
+    return { 
+      success: true, 
+      message: `¡Sincronización masiva exitosa! ${dataJson.inserted_or_updated} registros subidos.`,
+      count: dataJson.inserted_or_updated 
+    };
+
+  } catch (error) {
+    console.error("❌ Fallo crítico en el proceso de sincronización masiva:", error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Control de cierre de la app
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

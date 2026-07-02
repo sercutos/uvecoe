@@ -4,12 +4,13 @@
   "description": "",
   "main": "main.js",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
     "start": "cross-env NODE_ENV=development electron .",
+    "start:clean": "cross-env NODE_ENV=development RESET_DB=true electron .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pack": "electron-builder --dir",
-    "dev": "cross-env NODE_ENV=development electron .",
-    "dev:clean": "cross-env NODE_ENV=development RESET_DB=true electron .",
-    "build": "vite build"
+    "dev:clean": "cross-env NODE_ENV=development RESET_DB=true electron ."
   },
   "build": {
     "appId": "com.example.myapp",
@@ -23,12 +24,14 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.6",
     "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "electron": "^39.2.4",
     "electron-builder": "^26.0.12",
     "electron-rebuild": "^3.2.9",
     "electronmon": "^2.0.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "wait-on": "^9.0.10"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
