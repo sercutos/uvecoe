@@ -64,16 +64,23 @@ app.whenReady().then(async () => {
   const dbPath = getDbPath();
   try {
     console.log("[MIGRACIONES] Comprobando actualizaciones de la base de datos local...");
-    if (isDev && fs.existsSync(dbPath)) {
+
+    // 🧠 PARAMETRIZACIÓN OFFLINE:
+    // Solo borramos la base de datos en desarrollo SI además le pasamos el flag explícito RESET_DB=true
+    const forzarBorradoCompleto = process.env.RESET_DB === "true";
+
+    if (isDev && fs.existsSync(dbPath) && forzarBorradoCompleto) {
       console.log("[DEV] Borrando DB...");
       fs.unlinkSync(dbPath);
+    } else if (fs.existsSync(dbPath)) {
+      console.log("📦 [OFFLINE] Base de datos física detectada. Manteniendo datos persistentes.");
     }
     
     db = require("./src/db/knex");
     console.log("[DB] Ejecutando migraciones...");
     await db.migrate.latest(); 
     
-    console.log("[MIGRACIONES] Base de datos local al día.");
+    console.log("[MIGRACIONES] Base de datos local al dia.");
 
     //const cols = await db.raw("PRAGMA table_info(questions)");
     //console.log("📦 ESTRUCTURA QUESTIONS:", cols);
