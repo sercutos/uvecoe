@@ -31,7 +31,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         }
 
         const data = await response.json();
-
+        
         if (Array.isArray(data)) {
             setEcoes(data);
         } else {
@@ -76,6 +76,8 @@ export default function AdminConfig({ onConfigSuccess }) {
         
         if (data && Array.isArray(data.items)) {
             setStations(data.items);
+            //console.log("STATIONS (items):", data.items);
+            //console.log("ESTACIÓN EJEMPLO:", data.items?.[0]);
         } else if (Array.isArray(data)) {
             // Por si acaso otro endpoint devolviera el array limpio
             setStations(data);
@@ -93,7 +95,7 @@ export default function AdminConfig({ onConfigSuccess }) {
 
     fetchStations();
     }, [selectedEcoe]);
-
+    
   // 3. Descarga en cadena y guardado en SQLite
   const handleConfigurarPortatil = async (e) => {
     e.preventDefault();
@@ -108,17 +110,32 @@ export default function AdminConfig({ onConfigSuccess }) {
         const estacionActiva = stations.find(s => s.id === Number(selectedStation));
             // A) GUARDAR CONFIGURACIÓN BÁSICA LOCAL
             // Asumimos que tu endpoint de estaciones te da el block_id asociado. Si no, ponle un valor temporal.
+
+        
+        const resBlocks = await fetch(
+          `${API_BASE_URL}/blocks?station_id=${selectedStation}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            }
+          }
+        );
+        const blocksData = await resBlocks.json();
+        const block = blocksData?.items?.[0];
+        //console.log("BLOCK:", block);
         const configLocal = {
             ecoe_id: Number(selectedEcoe),
             station_id: Number(selectedStation),
             station_name: estacionActiva?.name || `Estación ${selectedStation}`,
-            block_id: estacionActiva?.block_id || 1 
+            block_id: block?.id || null
         };
         await window.api.guardarConfiguracion(configLocal);
-
+        
         // B) DESCARGAR PREGUNTAS (RÚBRICA) DE LA ESTACIÓN
         setStatusMessage("⏳ Descargando rúbrica de la estación...");
-        const resPreguntas = await fetch(`${API_BASE_URL}/questions?station_id=${selectedStation}`, {
+        const resPreguntas = await fetch(`${API_BASE_URL}/questions?station_id=${selectedStation}&per_page=500`, {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
@@ -134,7 +151,8 @@ export default function AdminConfig({ onConfigSuccess }) {
       
         // C) DESCARGAR ALUMNOS (PLANNER) DE LA ESTACIÓN
         setStatusMessage("⏳ Descargando lista de alumnos asignados...");
-        const resAlumnos = await fetch(`${API_BASE_URL}/students?station_id=${selectedStation}`, {
+        //const resAlumnos = await fetch(`${API_BASE_URL}/students?per_page=100&station_id=${selectedStation}`, {
+        const resAlumnos = await fetch(`${API_BASE_URL}/students?per_page=500&id_ecoe=1`, {
             method: "GET",
             headers: {
             "Content-Type": "application/json",
@@ -163,12 +181,20 @@ export default function AdminConfig({ onConfigSuccess }) {
 
         const dataUsers = await resUsers.json();
         const usuarios = dataUsers.items || dataUsers; // Extrae .items si viniera envuelto
+        //console.log("USERS:", usuarios);
         // D) VOLCAR DATOS A SQLITE MEDIANTE IPC
         setStatusMessage("⏳ Almacenando información en la base de datos local SQLite...");
         
         // Enviamos a Electron las preguntas, alumnos y usuarios para que haga los inserts masivos
-        await window.api.invoke("db:guardarDatosIniciales", { questions, alumnos, usuarios });
-
+        await window.api.invoke("db:guardarDatosIniciales", { 
+          stationId: configLocal.station_id,
+          id_block: block.id, //es un object
+          questions, 
+          alumnos, 
+          usuarios 
+        });
+        //console.log("block recibido:", block);
+        //console.log("typeof block:", typeof block);
         setStatusMessage("✅ ¡Portátil configurado con éxito y listo para trabajar Offline!");
         setLoading(false);
 
@@ -183,7 +209,20 @@ export default function AdminConfig({ onConfigSuccess }) {
       setLoading(false);
     }
   };
+  // SOLO PARA PRUEBAS
+  useEffect(() => {
+    if (ecoes.length > 0 && !selectedEcoe) {
+      setSelectedEcoe("1");
+    }
+  }, [ecoes]);
 
+  useEffect(() => {
+  if (stations.length > 0 && !selectedStation) {
+    setSelectedStation(stations[0].id.toString());
+  }
+}, [stations]);
+
+  // BORRAR
   return (
     <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
       <h2>⚙️ Panel de Configuración del Administrador</h2>
@@ -200,9 +239,9 @@ export default function AdminConfig({ onConfigSuccess }) {
             disabled={loading}
             style={{ width: '100%', padding: '10px', fontSize: '16px' }}
             required
+            
           >
-            <option value="">-- Seleccionar Examen --</option>
-            {Array.isArray(ecoes) && ecoes.map(ecoe => (
+            <option value="">-- Seleccionar Examen --</option>            {Array.isArray(ecoes) && ecoes.map(ecoe => (
                 <option key={ecoe.id} value={ecoe.id}>
                 {ecoe.nombre || ecoe.name || `ECOE ID: ${ecoe.id}`}
                 </option>

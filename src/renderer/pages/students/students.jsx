@@ -39,6 +39,7 @@ export default function Students() {
   const fetchStudents = async () => {
     try {
       const data = await window.api.getStudents();
+      console.log(data);
       setStudents(data || []); // Guardar los datos en el estado
     } catch (error) {
       console.error("Error al cargar estudiantes:", error);
@@ -50,32 +51,7 @@ export default function Students() {
     fetchStudents();
   }, []);
 
-  const [order, setOrder] = React.useState('asc');
-    const [orderBy, setOrderBy] = React.useState('name');
   
-    const handleRequestSort = (property) => {
-      const isAsc = orderBy === property && order === 'asc';
-      setOrder(isAsc ? 'desc' : 'asc');
-      setOrderBy(property);
-    };
-  
- 
-  
-    function getComparator(order, orderBy) {
-      return order === 'desc'
-        ? (a, b) => descendingComparator(a, b, orderBy)
-        : (a, b) => -descendingComparator(a, b, orderBy);
-    }
-  
-    function descendingComparator(a, b, orderBy) {
-      if (b[orderBy] < a[orderBy]) return -1;
-      if (b[orderBy] > a[orderBy]) return 1;
-      return 0;
-    }
-  
-      
-    
-
   return (    
     <>
       <Toolbar />
@@ -86,22 +62,24 @@ export default function Students() {
         <Typography variant="h5" gutterBottom>Table of Students</Typography>
         <TableContainer component={Paper} sx={{ mb: 4 }}>
           <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>DNI</TableCell>
-                <TableCell>Name</TableCell>
-                <TableCell>Surnames</TableCell>                
-              </TableRow>
-            </TableHead>
-            <TableBody>
+          <TableHead>
+            <TableRow>
+              <StyledTableCell>ID</StyledTableCell>
+              <StyledTableCell>DNI</StyledTableCell>
+              <StyledTableCell>Nombre</StyledTableCell>
+              <StyledTableCell>Apellidos</StyledTableCell>
+              <StyledTableCell>Planner</StyledTableCell>
+            </TableRow>
+          </TableHead>
+           <TableBody>
               {students.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell>{u.id}</TableCell>
-                  <TableCell>{u.dni}</TableCell>
-                  <TableCell>{u.name}</TableCell>
-                  <TableCell>{u.surnames}</TableCell>
-                </TableRow>
+                <StyledTableRow key={u.id}>
+                  <StyledTableCell>{u.id}</StyledTableCell>
+                  <StyledTableCell>{u.dni}</StyledTableCell>
+                  <StyledTableCell>{u.name}</StyledTableCell>
+                  <StyledTableCell>{u.surnames}</StyledTableCell>
+                  <StyledTableCell>{u.id_planner}</StyledTableCell>
+                </StyledTableRow>
               ))}
             </TableBody>
           </Table>
