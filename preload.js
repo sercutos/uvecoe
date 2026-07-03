@@ -9,9 +9,11 @@ contextBridge.exposeInMainWorld("api", {
   guardarConfiguracion: (config) => ipcRenderer.invoke("db:guardarConfiguracion", config),
   obtenerUsuarioLocal: (email) => ipcRenderer.invoke("db:obtenerUsuarioLocal", email),
   guardarUsuarioLocal: (usuario) => ipcRenderer.invoke("db:guardarUsuarioLocal", usuario),
-  obtenerAlumnosLocales: () => ipcRenderer.invoke('db:obtener-alumnos'),
+  getSetting: (key) => ipcRenderer.invoke("db:get-setting", key),
+  setSetting: (key, value) => ipcRenderer.invoke("db:set-setting", key, value),
+  obtenerEstudiantesLocales: () => ipcRenderer.invoke('db:obtener-estudiantes'),
   getStudents: () => ipcRenderer.invoke("db:getStudents"),
-  obtenerPreguntasLocales: () => ipcRenderer.invoke('db:obtener-preguntas'),
+  obtenerPreguntasLocales: (params) => ipcRenderer.invoke('db:obtener-preguntas', params),
   guardarResultadoLocal: (datos) => ipcRenderer.invoke('db:guardar-resultado', datos),
   descargarPreguntasServidor: (stationId) => ipcRenderer.invoke('db:descargar-preguntas-servidor', stationId)
 });

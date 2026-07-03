@@ -4,7 +4,8 @@ import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LockIcon from '@mui/icons-material/Lock';
 
 
-import logoImg from "../../../assets/images/logo1.png"; 
+import logoImg from "../../../assets/images/logo1.png";
+import { getApiBaseUrl } from "../utils/apiConfig";
 
 export default function Login({ onLogin }) {
 
@@ -26,7 +27,7 @@ const handleSubmit = async (e) => {
     console.log("[LOGIN] Intentando autenticación online con FastAPI...");
 
     // 1. INTENTO ONLINE ORIGINAL
-    const response = await fetch("http://localhost:8000/backend/auth/tokens", {
+    const response = await fetch(`${getApiBaseUrl()}/backend/auth/tokens`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

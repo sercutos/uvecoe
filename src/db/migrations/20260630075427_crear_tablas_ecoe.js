@@ -8,8 +8,8 @@ exports.up = async function (knex) {
     table.integer("block_id").notNullable();
   });
 
-  await knex.schema.createTable("usuarios", (table) => {
-    // 2. TABLA USUARIOS (Admin y el evaluador asignado a esta máquina)
+  await knex.schema.createTable("users", (table) => {
+    // 2. TABLA USERS (Admin y el evaluador asignado a esta máquina)
     table.increments("id").primary();
     table.integer("usuario_id_server").unique().notNullable();
     table.string("email").unique().notNullable();
@@ -17,8 +17,8 @@ exports.up = async function (knex) {
     table.string("token_temporal");
   });
 
-  await knex.schema.createTable("alumnos", (table) => {
-    // 3. TABLA ALUMNOS (Grupo de alumnos asignados a la estación)
+  await knex.schema.createTable("students", (table) => {
+    // 3. TABLA STUDENTS (Grupo de estudiantes asignados a la estación)
     table.integer("id").primary();
     table.string("name").notNullable();
     table.string("surnames").notNullable();
@@ -49,7 +49,7 @@ exports.up = async function (knex) {
     
     // Nombres de campos idénticos a FastAPI para evitar enredos
     table.integer("id_student").notNullable()
-      .references("id").inTable("alumnos")
+      .references("id").inTable("students")
       .onDelete("CASCADE");
 
     table.integer("id_question").notNullable()
@@ -71,7 +71,7 @@ exports.down = async function (knex) {
     // Eliminamos 
   await knex.schema.dropTableIfExists("resultados");
   await knex.schema.dropTableIfExists("questions");
-  await knex.schema.dropTableIfExists("alumnos");
-  await knex.schema.dropTableIfExists("usuarios");
+  await knex.schema.dropTableIfExists("students");
+  await knex.schema.dropTableIfExists("users");
   await knex.schema.dropTableIfExists("configuracion");
 };

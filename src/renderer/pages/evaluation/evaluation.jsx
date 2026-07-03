@@ -63,24 +63,24 @@ export default function EvaluationPage() {
           // MODO ONLINE: Intentar consumir de FastAPI
           // ==========================================
           console.log(`[EVALUATION] Modo Online: Buscando estación ID ${stationIdConfigurado}...`);
-          const stationsData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/stations?ecoe_id=${ecoeId}`);
+          const stationsData = await fetchWithAuth(`/stations?ecoe_id=${ecoeId}`);
           const stationList = stationsData?.items || (Array.isArray(stationsData) ? stationsData : []);
           targetStation = stationList.find(s => Number(s.id) === Number(stationIdConfigurado)) || stationList[0];
 
           // Cargar Planificación y Alumnos online
-          const plannerData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/planners?shift_id=${shiftId}&round_id=${roundId}`);
+          const plannerData = await fetchWithAuth(`/planners?shift_id=${shiftId}&round_id=${roundId}`);
           const plannerId = plannerData?.id || (plannerData?.items && plannerData.items[0]?.id) || plannerData[0]?.id;
 
           if (plannerId) {
-            const studentsData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/students?planner_id=${plannerId}`);
+            const studentsData = await fetchWithAuth(`/students?planner_id=${plannerId}`);
             rawStudents = studentsData.items || studentsData || [];
           }
 
           // Cargar preguntas online
-          const blocksData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/blocks?station_id=${stationIdConfigurado}`);
+          const blocksData = await fetchWithAuth(`/blocks?station_id=${stationIdConfigurado}`);
           const block = blocksData?.items?.[0] || (Array.isArray(blocksData) ? blocksData[0] : null);
           if (block) {
-            const questionsData = await fetchWithAuth(`http://localhost:8000/backend/api/v1/questions?station_id=${stationIdConfigurado}&block_id=${block.id}&per_page=500`);
+            const questionsData = await fetchWithAuth(`/questions?station_id=${stationIdConfigurado}&block_id=${block.id}&per_page=500`);
             rawQuestions = Array.isArray(questionsData) ? questionsData : (questionsData.items || []);
           }
 
@@ -92,9 +92,9 @@ export default function EvaluationPage() {
           
           targetStation = { id: stationIdConfigurado, name: `Estación Local #${stationIdConfigurado}`, order: 1 };
           
-          // Leer alumnos locales precargados
-          if (window.api.obtenerAlumnosLocales) {
-            rawStudents = await window.api.obtenerAlumnosLocales();
+          // Leer estudiantes locales precargados
+          if (window.api.obtenerEstudiantesLocales) {
+            rawStudents = await window.api.obtenerEstudiantesLocales();
           } else {
             // Fallback si ejecutas en navegador puro
             rawStudents = [{ id: 111, name: "ALUMNO OFFLINE A", planner_order: 1 }, { id: 222, name: "ALUMNO OFFLINE B", planner_order: 2 }];
@@ -113,7 +113,7 @@ export default function EvaluationPage() {
 
         // Procesar Alumnos de forma uniforme
         if (rawStudents.length === 0) {
-          throw new Error("No hay alumnos cargados para este entorno de evaluación.");
+          throw new Error("No hay estudiantes cargados para este entorno de evaluación.");
         }
 
         const mappedStudents = rawStudents.map((student, idx) => {
@@ -370,7 +370,7 @@ export default function EvaluationPage() {
     return (
       <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="80vh" gap={2}>
         <CircularProgress size={50} style={{ color: "#2b8ea7" }} />
-        <Typography variant="body1" color="textSecondary">Cargando rúbricas y cuadrando rotación de alumnos...</Typography>
+        <Typography variant="body1" color="textSecondary">Cargando rúbricas y cuadrando rotación de estudiantes...</Typography>
       </Box>
     );
   }

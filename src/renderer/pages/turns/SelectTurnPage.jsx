@@ -41,7 +41,7 @@ export default function SelectTurnPage() {
   }, [diaSeleccionado]);
 
   const handleSelectTurn = (turnoId, shiftCode) => {
-    // Guardamos el ID del turno elegido para las siguientes pantallas (alumnos, etc.)
+    // Guardamos el ID del turno elegido para las siguientes pantallas (estudiantes, etc.)
     sessionStorage.setItem("selected_shift_id", turnoId);
     sessionStorage.setItem("selected_shift_code", shiftCode || "ÚNICO");
     

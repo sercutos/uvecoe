@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, CircularProgress, Typography } from "@mui/material";
-import AdminConfig from "./pages/admin/AdminConfig"; // Asegúrate de la ruta de tu componente
+import AdminConfig from "./pages/admin/AdminConfig";
+import { initApiConfig } from "./utils/apiConfig";
 
 export default function App({ children }) {
   const [isConfigured, setIsConfigured] = useState(null);
@@ -8,9 +9,9 @@ export default function App({ children }) {
   useEffect(() => {
     async function checkConfiguration() {
       try {
-        // Consultamos en SQLite si ya existe fila de configuración
+        await initApiConfig();
         const config = await window.api.obtenerConfiguracion();
-        setIsConfigured(!!config); // true si existe, false si es undefined/null
+        setIsConfigured(!!config);
       } catch (error) {
         console.error("Error al verificar configuración local:", error);
         setIsConfigured(false);

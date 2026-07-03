@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getApiBaseUrl } from "../../utils/apiConfig";
 
 export default function AdminConfig({ onConfigSuccess }) {
   const [ecoes, setEcoes] = useState([]);
@@ -10,7 +11,7 @@ export default function AdminConfig({ onConfigSuccess }) {
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
 
-  const API_BASE_URL = "http://localhost:8000/backend/api/v1";
+  const getApiUrl = () => `${getApiBaseUrl()}/backend/api/v1`;
 
   // 1. Cargar los ECOEs disponibles al montar la pantalla
   useEffect(() => {
@@ -18,7 +19,7 @@ export default function AdminConfig({ onConfigSuccess }) {
       try {
         const token = sessionStorage.getItem("token_ecoe");
 
-        const response = await fetch(`${API_BASE_URL}/ecoes`,{
+        const response = await fetch(`${getApiUrl()}/ecoes`,{
             method: "GET",
             headers: {
             "Content-Type": "application/json",
@@ -59,7 +60,7 @@ export default function AdminConfig({ onConfigSuccess }) {
       try {
         const token = sessionStorage.getItem("token_ecoe");
 
-        const response = await fetch(`${API_BASE_URL}/stations?ecoe_id=${selectedEcoe}`, {
+        const response = await fetch(`${getApiUrl()}/stations?ecoe_id=${selectedEcoe}`, {
             method: "GET",
             headers: {
             "Content-Type": "application/json",
@@ -113,7 +114,7 @@ export default function AdminConfig({ onConfigSuccess }) {
 
         
         const resBlocks = await fetch(
-          `${API_BASE_URL}/blocks?station_id=${selectedStation}`,
+          `${getApiUrl()}/blocks?station_id=${selectedStation}`,
           {
             method: "GET",
             headers: {
@@ -135,7 +136,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         
         // B) DESCARGAR PREGUNTAS (RÚBRICA) DE LA ESTACIÓN
         setStatusMessage("⏳ Descargando rúbrica de la estación...");
-        const resPreguntas = await fetch(`${API_BASE_URL}/questions?station_id=${selectedStation}&per_page=500`, {
+        const resPreguntas = await fetch(`${getApiUrl()}/questions?station_id=${selectedStation}&per_page=500`, {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
@@ -150,9 +151,9 @@ export default function AdminConfig({ onConfigSuccess }) {
         const questions = dataPreguntas.items || dataPreguntas;
       
         // C) DESCARGAR ALUMNOS (PLANNER) DE LA ESTACIÓN
-        setStatusMessage("⏳ Descargando lista de alumnos asignados...");
-        //const resAlumnos = await fetch(`${API_BASE_URL}/students?per_page=100&station_id=${selectedStation}`, {
-        const resAlumnos = await fetch(`${API_BASE_URL}/students?per_page=500&id_ecoe=1`, {
+        setStatusMessage("⏳ Descargando lista de estudiantes asignados...");
+        //const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=100&station_id=${selectedStation}`, {
+        const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=500&id_ecoe=1`, {
             method: "GET",
             headers: {
             "Content-Type": "application/json",
@@ -160,14 +161,14 @@ export default function AdminConfig({ onConfigSuccess }) {
             }
         });
         if (!resAlumnos.ok) {
-            throw new Error(`Error en el servidor al descargar alumnos (Status: ${resAlumnos.status})`);
+            throw new Error(`Error en el servidor al descargar estudiantes (Status: ${resAlumnos.status})`);
         }
 
         const dataAlumnos = await resAlumnos.json();
-        const alumnos = dataAlumnos.items || dataAlumnos;
+        const students = dataAlumnos.items || dataAlumnos;
         // C.2) 🚀 NUEVO: DESCARGAR USUARIOS DE LA ORGANIZACIÓN
         setStatusMessage("⏳ Descargando lista de usuarios y evaluadores...");
-        const resUsers = await fetch(`${API_BASE_URL}/users`, { // 👈 Revisa si este es tu path exacto
+        const resUsers = await fetch(`${getApiUrl()}/users`, { // 👈 Revisa si este es tu path exacto
           method: "GET",
           headers: {
             "Content-Type": "application/json",
@@ -180,18 +181,17 @@ export default function AdminConfig({ onConfigSuccess }) {
         }
 
         const dataUsers = await resUsers.json();
-        const usuarios = dataUsers.items || dataUsers; // Extrae .items si viniera envuelto
-        //console.log("USERS:", usuarios);
+        const users = dataUsers.items || dataUsers;
         // D) VOLCAR DATOS A SQLITE MEDIANTE IPC
         setStatusMessage("⏳ Almacenando información en la base de datos local SQLite...");
         
-        // Enviamos a Electron las preguntas, alumnos y usuarios para que haga los inserts masivos
+        // Enviamos a Electron las preguntas, estudiantes y usuarios para que haga los inserts masivos
         await window.api.invoke("db:guardarDatosIniciales", { 
           stationId: configLocal.station_id,
-          id_block: block.id, //es un object
+          id_block: block.id,
           questions, 
-          alumnos, 
-          usuarios 
+          students, 
+          users 
         });
         //console.log("block recibido:", block);
         //console.log("typeof block:", typeof block);

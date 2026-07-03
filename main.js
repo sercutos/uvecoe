@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const queries = require("./src/db/queries");
+const settings = require("./src/db/settings");
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -113,6 +114,24 @@ ipcMain.handle("db:guardarConfiguracion", async (event, config) => {
   }
 });
 
+ipcMain.handle("db:get-setting", async (event, key) => {
+  try {
+    return await settings.getSetting(key);
+  } catch (error) {
+    console.error("Error en IPC get-setting:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("db:set-setting", async (event, key, value) => {
+  try {
+    return await settings.setSetting(key, value);
+  } catch (error) {
+    console.error("Error en IPC set-setting:", error);
+    throw error;
+  }
+});
+
 ipcMain.handle("db:obtenerUsuarioLocal", async (event, email) => {
   try {
     return await queries.obtenerUsuarioPorEmail(email);
@@ -131,11 +150,10 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
       : (usuario.id || Date.now()); // Fallback seguro
 
     // Comprobamos si ya existe el email para evitar romper el UNIQUE
-    const usuarioExistente = await db('usuarios').where({ email: usuario.email }).first();
+    const usuarioExistente = await db('users').where({ email: usuario.email }).first();
 
     if (usuarioExistente) {
-      // Si ya existe, actualizamos sus datos basándonos en el email
-      await db('usuarios')
+      await db('users')
         .where({ email: usuario.email })
         .update({
           role: usuario.role || 'evaluador',
@@ -144,8 +162,7 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
         });
       console.log(`🔄 [KNEX] Sincronizado perfil de usuario existente: ${usuario.email}`);
     } else {
-      // Si no existe, lo insertamos asegurando que ningún campo crítico sea undefined/null
-      await db('usuarios').insert({
+      await db('users').insert({
         email: usuario.email,
         role: usuario.role || 'evaluador',
         token_temporal: usuario.token_temporal || null,
@@ -161,7 +178,7 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
 });
 
 ipcMain.removeHandler('db:guardarDatosIniciales');
-ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, questions, alumnos, usuarios }) => {
+ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, questions, students, users }) => {
   return db.transaction(async (trx) => {
     try {
       console.log(`[SQLITE] Procesando lote en transacción limpia...`);
@@ -185,9 +202,8 @@ ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, 
       }
       
       // 2. 🔥 CORREGIDO: PROCESAR ALUMNOS FILTRANDO CAMPOS BASURA DE LA API ($uri, ecoe, planner)
-      if (alumnos && alumnos.length > 0) {
-        await trx('alumnos').del(); // Vacíamos la tabla primero
-        // Obtener el ID del planner       
+      if (students && students.length > 0) {
+        await trx('students').del();
         const getPlannerId = (planner) => {
           if (!planner?.$ref) return null;
 
@@ -195,8 +211,7 @@ ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, 
           return match ? Number(match[1]) : null;
         };
 
-
-        const alumnosProcesados = alumnos.map(a => ({
+        const studentsProcessed = students.map(a => ({
           id: a.id,
           dni: a.dni || '',
           name: a.name || '',
@@ -205,38 +220,36 @@ ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, 
           planner_order: a.planner_order || 0
         }));
 
-        await trx('alumnos').insert(alumnosProcesados);
-        //console.log("STUDENTS:", alumnos);
-        console.log(`[SQLITE] Insertados ${alumnosProcesados.length} alumnos procesados.`);
+        await trx('students').insert(studentsProcessed);
+        console.log(`[SQLITE] Insertados ${studentsProcessed.length} estudiantes procesados.`);
         
       }
 
-  // 3. PROCESAR USUARIOS (Blindado contra arrays de roles u objetos vacíos)
-  if (usuarios && usuarios.length > 0) {
-    await trx('usuarios').truncate();
+  // 3. PROCESAR USERS
+  if (users && users.length > 0) {
+    await trx('users').truncate();
     
-    const usuariosProcesados = usuarios.map(u => {
-      // 🚀 BLINDAJE DE ROL: Detectamos si es un array, si viene vacío, o si es un string roto
+    const usersProcessed = users.map(u => {
       let rolDefinitivo = 'evaluador';
       
       if (Array.isArray(u.roles) && u.roles.length > 0) {
-        rolDefinitivo = String(u.roles[0]); // Si es un array, toma el primero
+        rolDefinitivo = String(u.roles[0]);
       } else if (u.roles && typeof u.roles === 'string') {
-        rolDefinitivo = u.roles.trim(); // Si es un string normal, lo limpia
+        rolDefinitivo = u.roles.trim();
       } else if (u.role && typeof u.role === 'string') {
-        rolDefinitivo = u.role.trim(); // Por si en algún caso la propiedad se llama 'role' en singular
+        rolDefinitivo = u.role.trim();
       }
 
       return {
         usuario_id_server: u.id,
         email: u.email,
-        role: rolDefinitivo, // Asegura que SIEMPRE sea un string real (nunca un hueco o undefined)
+        role: rolDefinitivo,
         token_temporal: u.token_temporal || null
       };
   });
 
-  await trx('usuarios').insert(usuariosProcesados); 
-  console.log(`[SQLITE] Insertados ${usuariosProcesados.length} usuarios del sistema de forma limpia.`);
+  await trx('users').insert(usersProcessed); 
+  console.log(`[SQLITE] Insertados ${usersProcessed.length} usuarios del sistema de forma limpia.`);
 }
 
       console.log("✅ Lote inicial persistido con éxito en SQLite sin campos extra.");
@@ -253,15 +266,16 @@ ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, 
 ipcMain.removeHandler('db:descargar-preguntas-servidor');
 ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
   try {
+    const apiBase = await settings.getApiBaseUrl();
 
-    const blocksRes = await fetch(`http://localhost:8000/backend/api/v1/blocks?station_id=${stationId}`);
+    const blocksRes = await fetch(`${apiBase}/backend/api/v1/blocks?station_id=${stationId}`);
     const blocksData = await blocksRes.json();
     const block = blocksData?.items?.[0];
 
     if (!block) throw new Error("No block");
 
     const questionsRes = await fetch(
-      `http://localhost:8000/backend/api/v1/questions?station_id=${stationId}&block_id=${block.id}&per_page=500`
+      `${apiBase}/backend/api/v1/questions?station_id=${stationId}&block_id=${block.id}&per_page=500`
     );
 
     const questionsData = await questionsRes.json();
@@ -296,29 +310,27 @@ ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
   }
 });
 
-// 1. Obtener Alumnos (Modo Offline) con Knex
-ipcMain.removeHandler('db:obtener-alumnos');
-ipcMain.handle('db:obtener-alumnos', async () => {
+// Obtener Students (Modo Offline) con Knex
+ipcMain.removeHandler('db:obtener-estudiantes');
+ipcMain.handle('db:obtener-estudiantes', async () => {
   try {
-    const rows = await db('alumnos').select('*').orderBy('planner_order', 'asc');
+    const rows = await db('students').select('*').orderBy('planner_order', 'asc');
     
-    // Mapeamos al formato que espera tu vista
     return rows.map((row, idx) => ({
       id_estudiante: row.id,
       num: row.planner_order || idx + 1,
       name: `${row.surnames || ""}, ${row.name || ""}`.trim().toUpperCase()
     }));
   } catch (error) {
-    console.error("❌ Error en Knex al obtener alumnos:", error);
+    console.error("❌ Error en Knex al obtener estudiantes:", error);
     throw error;
   }
 });
-// TODOS Los alumnos
+// TODOS Los estudiantes
 ipcMain.handle("db:getStudents", async () => {
   try {
-    return await db("alumnos")
+    return await db("students")
       .select("*")
-      //.orderBy("id_planner", "asc");
       .orderByRaw("CAST(SUBSTR(dni, 2) AS INTEGER) ASC");
   } catch (error) {
     console.error(error);
@@ -327,7 +339,8 @@ ipcMain.handle("db:getStudents", async () => {
 });
 
 // 2. Obtener Preguntas (Modo Offline) con Knex
-ipcMain.handle('db:obtener-preguntas', async (event, { stationId, blockId }) => {
+ipcMain.handle('db:obtener-preguntas', async (event, params = {}) => {
+  const { stationId, blockId } = params;
   try {
     let query = db('questions');
 
@@ -453,7 +466,8 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async () => {
     console.log(`📡 Enviando un lote masivo de ${payloadParaFastAPI.length} respuestas a FastAPI...`);
 
     // 3. Enviamos el lote mediante un único POST HTTP masivo
-    const response = await fetch('http://localhost:8000/backend/api/v1/answers/bulk-sync', {
+    const apiBase = await settings.getApiBaseUrl();
+    const response = await fetch(`${apiBase}/backend/api/v1/answers/bulk-sync`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

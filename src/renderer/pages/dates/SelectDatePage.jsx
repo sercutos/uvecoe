@@ -33,7 +33,7 @@ export default function SelectDatePage() {
         try {
           // 2. INTENTO ONLINE: Consumir turnos de FastAPI
           console.log(`[FECHAS] Solicitando turnos online para ECOE ID: ${ecoeId}...`);
-          const data = await fetchWithAuth(`http://localhost:8000/backend/api/v1/shifts?id_ecoe=${ecoeId}`);
+          const data = await fetchWithAuth(`/shifts?id_ecoe=${ecoeId}`);
           turnos = data.items || data || [];
           console.log("[FECHAS] Datos de turnos obtenidos de la API.");
         } catch (onlineError) {

@@ -33,7 +33,7 @@ export default function SelectRoundPage() {
         try {
           // 2. INTENTO ONLINE: Obtener rondas de FastAPI
           console.log(`[ROUNDS] Cargando rondas online para ECOE ID: ${ecoeId}...`);
-          const data = await fetchWithAuth(`http://localhost:8000/backend/api/v1/rounds?ecoe_id=${ecoeId}`);
+          const data = await fetchWithAuth(`/rounds?ecoe_id=${ecoeId}`);
           
           // Soporte si la API devuelve directamente array o un objeto paginado .items
           const listaRondas = data.items || data || [];

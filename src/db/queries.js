@@ -8,31 +8,31 @@ const queries = {
   },
 
   // --- 🚀 NUEVO: INSERCIÓN MASIVA DE DATOS DEL ADMINISTRADOR ---
-  guardarDatosIniciales: async (questions, alumnos, usuarios) => {
+  guardarDatosIniciales: async (questions, students, users) => {
     return db.transaction(async (trx) => {
       
       // 1. Limpiamos tablas previas para evitar duplicados si reconfiguran
       await trx("resultados").del();
       await trx("questions").del();
-      await trx("alumnos").del();
-      await trx("usuarios").del(); // 🚀 ¡Nuevo! Limpieza de usuarios anteriores
+      await trx("students").del();
+      await trx("users").del();
 
       // 2. Mapeamos e insertamos los Alumnos
-      if (alumnos && alumnos.length > 0) {
-        const alumnosMapeados = alumnos.map(a => ({
+      if (students && students.length > 0) {
+        const studentsMapped = students.map(a => ({
           id: a.id,
           id_planner: a.id_planner,
           planner_order: a.planner_order ?? a.orden ?? 0, 
           name: a.name || a.nombre || "",
           surnames: a.surnames || a.apellidos || ""
         }));
-        console.log("STUDENTS:", alumnosMapeados);
-        await trx.batchInsert("alumnos", alumnosMapeados, 30);
+        console.log("STUDENTS:", studentsMapped);
+        await trx.batchInsert("students", studentsMapped, 30);
       }
 
       // 3. Mapeamos e insertamos las Preguntas
       if (questions && questions.length > 0) {
-        const preguntasMapeadas = preguntas.map(p => ({
+        const preguntasMapeadas = questions.map(p => ({
           id: p.id,
           reference: p.reference || p.referencia || "",
           description: p.description || p.texto || "",
@@ -42,20 +42,19 @@ const queries = {
         await trx.batchInsert("questions", preguntasMapeadas, 30);
       }
 
-      // 4. 🚀 NUEVO: Mapeamos e insertamos los Usuarios de la Organización
-      if (usuarios && usuarios.length > 0) {
-        const usuariosMapeados = usuarios.map(u => {
-          // Determinamos el rol local basándonos en su array de roles del servidor
+      // 4. Mapeamos e insertamos los Usuarios de la Organización
+      if (users && users.length > 0) {
+        const usersMapped = users.map(u => {
           const isAdmin = u.roles?.includes("administrator") || u.roles?.includes("superadmin") || u.is_superadmin;
           
           return {
             usuario_id_server: u.id,
             email: u.email,
-            role: isAdmin ? "admin" : "evaluador", // 'admin' o 'evaluador' acorde a tu SQLite
-            token_temporal: null // Se rellenará cuando hagan login offline si fuera necesario
+            role: isAdmin ? "admin" : "evaluador",
+            token_temporal: null
           };
         });
-        await trx.batchInsert("usuarios", usuariosMapeados, 30);
+        await trx.batchInsert("users", usersMapped, 30);
       }
     });
   },
@@ -73,8 +72,7 @@ const queries = {
 
   // --- CONSULTAS DE USUARIOS ---
   guardarUsuarioLocal: async (usuario) => {
-    // Inserta o actualiza el usuario del evaluador/admin
-    return db("usuarios")
+    return db("users")
       .insert({
         usuario_id_server: usuario.id,
         email: usuario.email,
@@ -86,7 +84,7 @@ const queries = {
   },
 
   obtenerUsuarioPorEmail: async (email) => {
-    return db("usuarios").where({ email }).first();
+    return db("users").where({ email }).first();
   }
 };
 
