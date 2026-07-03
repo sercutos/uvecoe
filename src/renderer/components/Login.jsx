@@ -46,7 +46,6 @@ const handleSubmit = async (e) => {
     }
 
     const data = await response.json();
-    console.log("[LOGIN] Respuesta exitosa de FastAPI:", data);
     
     if (data.token) {
       // A) Guardamos el token en el navegador para las llamadas de red mientras dure la sesión

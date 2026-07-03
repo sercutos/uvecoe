@@ -5,8 +5,6 @@ export const fetchWithAuth = async (input, options = {}) => {
 
   const token = sessionStorage.getItem("token_ecoe");
 
-  console.log(`[API] Intentando petición a: ${url}`);
-
   const headers = {
     "Content-Type": "application/json",
     ...options.headers,
@@ -14,21 +12,12 @@ export const fetchWithAuth = async (input, options = {}) => {
 
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
-  } else {
-    console.warn("[API] ¡Advertencia! No hay ningún token en sessionStorage.");
   }
-
-  console.log("[API] Cabeceras enviadas:", {
-    ...headers,
-    Authorization: token ? `Bearer ${token.substring(0, 10)}...` : "Ninguno"
-  });
 
   const response = await fetch(url, {
     ...options,
     headers
   });
-
-  console.log(`[API] Respuesta del servidor - Estado: ${response.status} ${response.statusText}`);
 
   if (response.status === 401) {
     console.error("[API] Error 401: El servidor dice que este token NO es válido o ha expirado.");

@@ -7,54 +7,57 @@ const queries = {
     return db("configuracion").first();
   },
 
-  // --- 🚀 NUEVO: INSERCIÓN MASIVA DE DATOS DEL ADMINISTRADOR ---
-  guardarDatosIniciales: async (questions, students, users) => {
+  // --- INSERCIÓN MASIVA DE DATOS DEL ADMINISTRADOR ---
+  guardarDatosIniciales: async (stationId, id_block, questions, students, users) => {
     return db.transaction(async (trx) => {
-      
-      // 1. Limpiamos tablas previas para evitar duplicados si reconfiguran
-      await trx("resultados").del();
-      await trx("questions").del();
-      await trx("students").del();
-      await trx("users").del();
 
-      // 2. Mapeamos e insertamos los Alumnos
-      if (students && students.length > 0) {
-        const studentsMapped = students.map(a => ({
-          id: a.id,
-          id_planner: a.id_planner,
-          planner_order: a.planner_order ?? a.orden ?? 0, 
-          name: a.name || a.nombre || "",
-          surnames: a.surnames || a.apellidos || ""
-        }));
-        console.log("STUDENTS:", studentsMapped);
-        await trx.batchInsert("students", studentsMapped, 30);
-      }
-
-      // 3. Mapeamos e insertamos las Preguntas
       if (questions && questions.length > 0) {
-        const preguntasMapeadas = questions.map(p => ({
-          id: p.id,
-          reference: p.reference || p.referencia || "",
-          description: p.description || p.texto || "",
-          area: p.area || "General",
-          order: p.order ?? p.orden ?? 0
+        await trx('questions').del();
+        const preguntasProcesadas = questions.map(q => ({
+          id: q.id,
+          order: q.order || 0,
+          description: q.question_schema?.description || '',
+          reference: q.question_schema?.reference || '',
+          area: q.area?.name || 'General',
+          id_station: stationId || null,
+          id_block: id_block ?? null,
+          question_schema: JSON.stringify(q.question_schema || {})
         }));
-        await trx.batchInsert("questions", preguntasMapeadas, 30);
+        await trx('questions').insert(preguntasProcesadas);
       }
 
-      // 4. Mapeamos e insertamos los Usuarios de la Organización
+      if (students && students.length > 0) {
+        await trx('students').del();
+        const studentsProcessed = students.map(a => ({
+          id: a.id,
+          dni: a.dni || '',
+          name: a.name || '',
+          surnames: a.surnames || '',
+          id_planner: a.planner?.$ref ? (a.planner.$ref.match(/\/(\d+)$/)?.[1] ?? null) : null,
+          planner_order: a.planner_order || 0
+        }));
+        await trx('students').insert(studentsProcessed);
+      }
+
       if (users && users.length > 0) {
-        const usersMapped = users.map(u => {
-          const isAdmin = u.roles?.includes("administrator") || u.roles?.includes("superadmin") || u.is_superadmin;
-          
+        await trx('users').truncate();
+        const usersProcessed = users.map(u => {
+          let rolDefinitivo = 'evaluador';
+          if (Array.isArray(u.roles) && u.roles.length > 0) {
+            rolDefinitivo = String(u.roles[0]);
+          } else if (u.roles && typeof u.roles === 'string') {
+            rolDefinitivo = u.roles.trim();
+          } else if (u.role && typeof u.role === 'string') {
+            rolDefinitivo = u.role.trim();
+          }
           return {
             usuario_id_server: u.id,
             email: u.email,
-            role: isAdmin ? "admin" : "evaluador",
-            token_temporal: null
+            role: rolDefinitivo,
+            token_temporal: u.token_temporal || null
           };
         });
-        await trx.batchInsert("users", usersMapped, 30);
+        await trx('users').insert(usersProcessed);
       }
     });
   },

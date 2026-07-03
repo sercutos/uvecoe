@@ -215,7 +215,7 @@ export default function Settings() {
       // C) Descargar estudiantes
       setDownloadStatus("⏳ Descargando lista de estudiantes asignados...");
       const resAlumnos = await fetch(
-        `${getApiBaseUrl()}/backend/api/v1/students?per_page=500&id_ecoe=1`,
+        `${getApiBaseUrl()}/backend/api/v1/students?per_page=500&id_ecoe=${selectedEcoe}`,
         {
           method: "GET",
           headers: {
@@ -248,7 +248,7 @@ export default function Settings() {
       setDownloadStatus("⏳ Almacenando información en la base de datos local SQLite...");
       await window.api.invoke("db:guardarDatosIniciales", {
         stationId: configLocal.station_id,
-        id_block: block.id,
+        id_block: block?.id ?? null,
         questions,
         students,
         users

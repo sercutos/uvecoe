@@ -153,7 +153,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         // C) DESCARGAR ALUMNOS (PLANNER) DE LA ESTACIÓN
         setStatusMessage("⏳ Descargando lista de estudiantes asignados...");
         //const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=100&station_id=${selectedStation}`, {
-        const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=500&id_ecoe=1`, {
+        const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=500&id_ecoe=${selectedEcoe}`, {
             method: "GET",
             headers: {
             "Content-Type": "application/json",
@@ -188,7 +188,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         // Enviamos a Electron las preguntas, estudiantes y usuarios para que haga los inserts masivos
         await window.api.invoke("db:guardarDatosIniciales", { 
           stationId: configLocal.station_id,
-          id_block: block.id,
+          id_block: block?.id ?? null,
           questions, 
           students, 
           users 

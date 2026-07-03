@@ -179,87 +179,15 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
 
 ipcMain.removeHandler('db:guardarDatosIniciales');
 ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, questions, students, users }) => {
-  return db.transaction(async (trx) => {
-    try {
-      console.log(`[SQLITE] Procesando lote en transacción limpia...`);
-
-      // 1. PROCESAR PREGUNTAS
-      if (questions && questions.length > 0) {
-        await trx('questions').del();
-        const preguntasProcesadas = questions.map(q => ({
-          id: q.id,
-          order: q.order || 0,
-          description: q.question_schema?.description || '',
-          reference: q.question_schema?.reference || '',
-          area: q.area?.name || 'General',
-          id_station: stationId || null,
-          id_block: id_block,
-          question_schema: JSON.stringify(q.question_schema || {})
-        }));
-
-        await trx('questions').insert(preguntasProcesadas);
-        //console.log("ROWS DEBUG preguntasProcesadas:", preguntasProcesadas[0]);
-      }
-      
-      // 2. 🔥 CORREGIDO: PROCESAR ALUMNOS FILTRANDO CAMPOS BASURA DE LA API ($uri, ecoe, planner)
-      if (students && students.length > 0) {
-        await trx('students').del();
-        const getPlannerId = (planner) => {
-          if (!planner?.$ref) return null;
-
-          const match = planner.$ref.match(/\/(\d+)$/);
-          return match ? Number(match[1]) : null;
-        };
-
-        const studentsProcessed = students.map(a => ({
-          id: a.id,
-          dni: a.dni || '',
-          name: a.name || '',
-          surnames: a.surnames || '',
-          id_planner: getPlannerId(a.planner),
-          planner_order: a.planner_order || 0
-        }));
-
-        await trx('students').insert(studentsProcessed);
-        console.log(`[SQLITE] Insertados ${studentsProcessed.length} estudiantes procesados.`);
-        
-      }
-
-  // 3. PROCESAR USERS
-  if (users && users.length > 0) {
-    await trx('users').truncate();
-    
-    const usersProcessed = users.map(u => {
-      let rolDefinitivo = 'evaluador';
-      
-      if (Array.isArray(u.roles) && u.roles.length > 0) {
-        rolDefinitivo = String(u.roles[0]);
-      } else if (u.roles && typeof u.roles === 'string') {
-        rolDefinitivo = u.roles.trim();
-      } else if (u.role && typeof u.role === 'string') {
-        rolDefinitivo = u.role.trim();
-      }
-
-      return {
-        usuario_id_server: u.id,
-        email: u.email,
-        role: rolDefinitivo,
-        token_temporal: u.token_temporal || null
-      };
-  });
-
-  await trx('users').insert(usersProcessed); 
-  console.log(`[SQLITE] Insertados ${usersProcessed.length} usuarios del sistema de forma limpia.`);
-}
-
-      console.log("✅ Lote inicial persistido con éxito en SQLite sin campos extra.");
-      return { success: true };
-
-    } catch (error) {
-      console.error("❌ Error crítico en la transacción de Knex:", error);
-      throw error; // Ejecuta automáticamente el ROLLBACK para que no queden datos corruptos
-    }
-  });
+  try {
+    console.log(`[SQLITE] Procesando lote en transacción limpia...`);
+    await queries.guardarDatosIniciales(stationId, id_block, questions, students, users);
+    console.log("✅ Lote inicial persistido con éxito en SQLite.");
+    return { success: true };
+  } catch (error) {
+    console.error("❌ Error crítico en la transacción de Knex:", error);
+    throw error;
+  }
 });
 
 
@@ -290,7 +218,7 @@ ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
         area: typeof q.area === 'object' ? q.area?.name : q.area || 'General',
         id_station: stationId,
         order: q.order || 0,
-        id_block: block.id,
+        id_block: block?.id ?? null,
         reference: q.question_schema?.reference || '',
         description: q.question_schema?.description || '',
         question_schema: JSON.stringify(q.question_schema || {})
