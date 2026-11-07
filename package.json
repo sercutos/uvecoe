@@ -5,12 +5,14 @@
   "main": "main.js",
   "scripts": {
     "dev": "vite",
+    "electron:dev": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "electron:dev:clean": "wait-on tcp:5173 && cross-env NODE_ENV=development RESET_DB=true electron .",
+    "start": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"npm:electron:dev\"",
+    "start:clean": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"npm:electron:dev:clean\"",
     "build": "vite build",
-    "start": "cross-env NODE_ENV=development electron .",
-    "start:clean": "cross-env NODE_ENV=development RESET_DB=true electron .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "pack": "electron-builder --dir",
-    "dev:clean": "cross-env NODE_ENV=development RESET_DB=true electron ."
+    "dev:clean": "npm run start:clean"
   },
   "build": {
     "appId": "com.example.myapp",
