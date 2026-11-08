@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Box, IconButton, Tooltip, Menu, MenuItem, Modal, Typography, Button, Divider } from '@mui/material';
+import React, { useEffect, useState } from 'react';
+import { Box, IconButton, Tooltip, Menu, MenuItem, Modal, Typography, Button, Divider, Chip, CircularProgress } from '@mui/material';
 
 // Importación de iconos
 import HomeIcon from '@mui/icons-material/Home';
@@ -10,8 +10,11 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'; // Icono extra para el menú de ayuda
 import InfoIcon from '@mui/icons-material/Info';               // Icono extra para el Acerca de
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import CloudDoneIcon from '@mui/icons-material/CloudDone';
 
 import { useNavigate, useLocation } from "react-router-dom";
+import { getApiBaseUrl } from "../utils/apiConfig";
 
 // Estilo base reutilizable para los modales estéticos de MUI
 const modalStyle = {
@@ -39,9 +42,98 @@ export default function Toolbar() {
   const [openHelp, setOpenHelp] = useState(false);
   const [openAbout, setOpenAbout] = useState(false);
 
+  // Estado de sincronización local -> servidor
+  const [pending, setPending] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const refreshPending = async () => {
+      try {
+        if (!window.api?.contarPendientes) return;
+        const count = await window.api.contarPendientes();
+        if (active) setPending(Number(count) || 0);
+      } catch (error) {
+        console.warn("[SYNC] No se pudo contar pendientes:", error);
+      }
+    };
+
+    refreshPending();
+    const interval = setInterval(refreshPending, 10000);
+    window.addEventListener("uvecoe:pending-changed", refreshPending);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("uvecoe:pending-changed", refreshPending);
+    };
+  }, []);
+
+  const handleSyncClick = async () => {
+    if (syncing) return;
+
+    const token = sessionStorage.getItem("token_ecoe");
+    if (!token) {
+      navigate("/login");
+      return;
+    }
+
+    setSyncing(true);
+
+    try {
+      const result = await window.api.sincronizarRespuestas(token);
+      if (!result?.success) {
+        console.warn("[SYNC]", result?.error || "Sincronización fallida");
+      }
+    } catch (error) {
+      console.warn("[SYNC] Error sincronizando:", error);
+    } finally {
+      setSyncing(false);
+      try {
+        const count = await window.api.contarPendientes();
+        setPending(Number(count) || 0);
+      } catch {
+        // La siguiente consulta periódica lo actualizará.
+      }
+    }
+  };
+
   // Manejadores del menú desplegable
   const handleProfileClick = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
+
+  const userEmail = sessionStorage.getItem("user_email") || "Usuario";
+
+  const handleLogout = () => {
+    const token = sessionStorage.getItem("token_ecoe");
+
+    // Revocar el token en el servidor si hay conexión; si falla, no bloquea el logout.
+    if (token) {
+      fetch(`${getApiBaseUrl()}/backend/auth/tokens`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }).catch(() => {});
+    }
+
+    [
+      "token_ecoe",
+      "user_email",
+      "selected_date_string",
+      "selected_round_id",
+      "selected_round_code",
+      "selected_shift_id",
+      "selected_shift_code",
+      "selected_planner_id",
+      "todos_los_turnos"
+    ].forEach((key) => sessionStorage.removeItem(key));
+
+    // api_base_url se conserva para que el Login siga apuntando al servidor correcto.
+    localStorage.removeItem("logged");
+    navigate("/login");
+  };
 
   const getIconStyle = (path) => {
     const isActive = location.pathname === path;
@@ -104,6 +196,39 @@ export default function Toolbar() {
 
         <Box sx={{ flexGrow: 1 }} />
 
+        {/* ESTADO DE SINCRONIZACIÓN */}
+        <Tooltip
+          title={
+            pending > 0
+              ? "Respuestas pendientes. Pulsa para sincronizar."
+              : "Todo sincronizado con el servidor"
+          }
+        >
+          <Chip
+            size="small"
+            icon={
+              syncing ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : pending > 0 ? (
+                <CloudUploadIcon />
+              ) : (
+                <CloudDoneIcon />
+              )
+            }
+            label={
+              syncing
+                ? "Sincronizando..."
+                : pending > 0
+                  ? `${pending} pendientes`
+                  : "Al día"
+            }
+            color={pending > 0 ? "warning" : "success"}
+            variant={pending > 0 ? "filled" : "outlined"}
+            onClick={handleSyncClick}
+            sx={{ mr: 1, cursor: "pointer" }}
+          />
+        </Tooltip>
+
         {/* BOTÓN DE PERFIL/OPCIONES */}
         <Tooltip title="Opciones de usuario">
           <IconButton 
@@ -132,12 +257,12 @@ export default function Toolbar() {
               Conectado como:
             </Typography>
             <Typography variant="subtitle2" color="primary" sx={{ fontWeight: 'bold' }}>
-              ecoe@umh.es
+              {userEmail}
             </Typography>
           </Box>
           <Divider />
           
-          <MenuItem onClick={() => { handleMenuClose(); navigate("/login"); }}>
+          <MenuItem onClick={handleLogout}>
             <AccountCircleIcon sx={{ mr: 1.5, color: 'action.active' }} /> Salir / Logout
           </MenuItem>
 

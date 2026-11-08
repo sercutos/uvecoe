@@ -15,5 +15,13 @@ contextBridge.exposeInMainWorld("api", {
   getStudents: () => ipcRenderer.invoke("db:getStudents"),
   obtenerPreguntasLocales: (params) => ipcRenderer.invoke('db:obtener-preguntas', params),
   guardarResultadoLocal: (datos) => ipcRenderer.invoke('db:guardar-resultado', datos),
-  descargarPreguntasServidor: (stationId) => ipcRenderer.invoke('db:descargar-preguntas-servidor', stationId)
+  sincronizarRespuestas: (token) => ipcRenderer.invoke('db:sincronizar-respuestas-al-servidor', token),
+  contarPendientes: () => ipcRenderer.invoke('db:contar-pendientes'),
+  descargarPreguntasServidor: (stationId) => ipcRenderer.invoke('db:descargar-preguntas-servidor', stationId),
+  guardarDatosIniciales: (payload) => ipcRenderer.invoke('db:guardarDatosIniciales', payload),
+  obtenerShifts: (ecoeId) => ipcRenderer.invoke('db:obtener-shifts', ecoeId),
+  obtenerRounds: (ecoeId) => ipcRenderer.invoke('db:obtener-rounds', ecoeId),
+  obtenerPlanner: (shiftId, roundId) => ipcRenderer.invoke('db:obtener-planner', { shiftId, roundId }),
+  obtenerEstudiantesPlanner: (plannerId) => ipcRenderer.invoke('db:obtener-estudiantes-planner', plannerId),
+  asegurarReferencias: (payload) => ipcRenderer.invoke('db:asegurar-referencias', payload)
 });

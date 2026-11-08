@@ -8,10 +8,15 @@ const isDev = process.env.NODE_ENV === "development";
 
 let mainWindow;
 let splashWindow;
-let db; 
+let db;
+let syncInProgress = false;
 
 function getDbPath() {
-  return path.join(__dirname, "data", "uvecoe.db");
+  if (app.isPackaged) {
+    return path.join(app.getPath("userData"), "uvecoe.db");
+  }
+
+  return path.join(process.cwd(), "data", "uvecoe.db");
 }
 
 function createWindow() {
@@ -144,48 +149,124 @@ ipcMain.handle("db:obtenerUsuarioLocal", async (event, email) => {
 ipcMain.removeHandler('db:guardarUsuarioLocal');
 ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
   try {
-    // 🚀 SOLUCIÓN: Si por lo que sea el servidor no manda el ID, generamos uno basado en tiempo para que no sea NULL
-    const idServerValido = usuario.usuario_id_server !== undefined && usuario.usuario_id_server !== null
-      ? usuario.usuario_id_server
-      : (usuario.id || Date.now()); // Fallback seguro
+    // Si el servidor no manda el ID, generamos uno basado en tiempo para evitar NULL.
+    const idServerValido =
+      usuario.usuario_id_server !== undefined &&
+      usuario.usuario_id_server !== null
+        ? usuario.usuario_id_server
+        : usuario.id || Date.now();
 
-    // Comprobamos si ya existe el email para evitar romper el UNIQUE
-    const usuarioExistente = await db('users').where({ email: usuario.email }).first();
+    // Aceptamos token o token_temporal (Login manda "token").
+    const tokenLocal =
+      usuario.token_temporal ?? usuario.token ?? null;
+
+    // Hash de contraseña para el login offline (lo calcula el renderer).
+    const passwordHash =
+      typeof usuario.password_hash === "string" &&
+      usuario.password_hash.length > 0
+        ? usuario.password_hash
+        : null;
+
+    const emailNormalizado = String(usuario.email || "").trim().toLowerCase();
+
+    const usuarioExistente = await db("users")
+      .whereRaw("LOWER(email) = ?", [emailNormalizado])
+      .first();
 
     if (usuarioExistente) {
-      await db('users')
-        .where({ email: usuario.email })
-        .update({
-          role: usuario.role || 'evaluador',
-          token_temporal: usuario.token_temporal || null,
-          usuario_id_server: idServerValido
-        });
-      console.log(`🔄 [KNEX] Sincronizado perfil de usuario existente: ${usuario.email}`);
+      const cambios = {
+        role: usuario.role || "evaluador",
+        usuario_id_server: idServerValido
+      };
+
+      // No borrar el token/hash existente si esta llamada no los trae.
+      if (tokenLocal !== null) cambios.token_temporal = tokenLocal;
+      if (passwordHash !== null) cambios.password_hash = passwordHash;
+
+      await db("users").where({ id: usuarioExistente.id }).update(cambios);
+      console.log(
+        `🔄 [KNEX] Sincronizado perfil de usuario existente: ${emailNormalizado}`
+      );
     } else {
-      await db('users').insert({
-        email: usuario.email,
-        role: usuario.role || 'evaluador',
-        token_temporal: usuario.token_temporal || null,
+      await db("users").insert({
+        email: emailNormalizado,
+        role: usuario.role || "evaluador",
+        token_temporal: tokenLocal,
+        password_hash: passwordHash,
         usuario_id_server: idServerValido
       });
-      console.log(`💾 [KNEX] Guardado nuevo usuario en el portátil: ${usuario.email}`);
+      console.log(
+        `💾 [KNEX] Guardado nuevo usuario en el portátil: ${emailNormalizado}`
+      );
     }
+
     return { success: true };
   } catch (error) {
-    console.error("❌ Error guardando usuario local con validación NOT NULL:", error);
+    console.error(
+      "❌ Error guardando usuario local con validación NOT NULL:",
+      error
+    );
     throw error;
   }
 });
 
 ipcMain.removeHandler('db:guardarDatosIniciales');
-ipcMain.handle('db:guardarDatosIniciales', async (event, { stationId, id_block, questions, students, users }) => {
+ipcMain.handle('db:guardarDatosIniciales', async (event, payload) => {
   try {
-    console.log(`[SQLITE] Procesando lote en transacción limpia...`);
-    await queries.guardarDatosIniciales(stationId, id_block, questions, students, users);
+    console.log(`[SQLITE] Procesando lote inicial (turnos, rondas, planners, alumnos, preguntas y usuarios)...`);
+    await queries.guardarDatosIniciales(payload);
     console.log("✅ Lote inicial persistido con éxito en SQLite.");
     return { success: true };
   } catch (error) {
     console.error("❌ Error crítico en la transacción de Knex:", error);
+    throw error;
+  }
+});
+
+// --- CONSULTAS DE PLANIFICACIÓN PARA EL MODO OFFLINE ---
+ipcMain.handle("db:obtener-shifts", async (event, ecoeId) => {
+  try {
+    return await queries.obtenerShifts(ecoeId);
+  } catch (error) {
+    console.error("Error en IPC obtener-shifts:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("db:obtener-rounds", async (event, ecoeId) => {
+  try {
+    return await queries.obtenerRounds(ecoeId);
+  } catch (error) {
+    console.error("Error en IPC obtener-rounds:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("db:obtener-planner", async (event, { shiftId, roundId }) => {
+  try {
+    return await queries.obtenerPlanner(shiftId, roundId);
+  } catch (error) {
+    console.error("Error en IPC obtener-planner:", error);
+    throw error;
+  }
+});
+
+ipcMain.handle("db:obtener-estudiantes-planner", async (event, plannerId) => {
+  try {
+    return await queries.obtenerEstudiantesPorPlanner(plannerId);
+  } catch (error) {
+    console.error("Error en IPC obtener-estudiantes-planner:", error);
+    throw error;
+  }
+});
+
+// Antes de evaluar, garantiza que los alumnos/preguntas online existen en SQLite.
+ipcMain.handle("db:asegurar-referencias", async (event, payload) => {
+  try {
+    await queries.asegurarReferencias(payload);
+    return { success: true };
+  } catch (error) {
+    console.error("❌ Error asegurando referencias locales:", error);
     throw error;
   }
 });
@@ -242,7 +323,10 @@ ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
 ipcMain.removeHandler('db:obtener-estudiantes');
 ipcMain.handle('db:obtener-estudiantes', async () => {
   try {
-    const rows = await db('students').select('*').orderBy('planner_order', 'asc');
+    const rows = await db('students')
+      .where({ active: true })
+      .select('*')
+      .orderBy('planner_order', 'asc');
     
     return rows.map((row, idx) => ({
       id_estudiante: row.id,
@@ -258,6 +342,7 @@ ipcMain.handle('db:obtener-estudiantes', async () => {
 ipcMain.handle("db:getStudents", async () => {
   try {
     return await db("students")
+      .where({ active: true })
       .select("*")
       .orderByRaw("CAST(SUBSTR(dni, 2) AS INTEGER) ASC");
   } catch (error) {
@@ -270,7 +355,7 @@ ipcMain.handle("db:getStudents", async () => {
 ipcMain.handle('db:obtener-preguntas', async (event, params = {}) => {
   const { stationId, blockId } = params;
   try {
-    let query = db('questions');
+    let query = db('questions').where('active', true);
 
     if (stationId) {
       query = query.where('id_station', stationId);
@@ -282,17 +367,46 @@ ipcMain.handle('db:obtener-preguntas', async (event, params = {}) => {
 
     const rows = await query.orderBy('order', 'asc');
 
-    return rows.map(row => ({
-      id: row.id,
-      order: row.order,
-      question_schema: {
-        reference: row.reference,
-        description: row.description
-      },
-      area: {
-        name: row.area
+    return rows.map((row) => {
+      let schema = {};
+
+      try {
+        schema =
+          typeof row.question_schema === "string"
+            ? JSON.parse(row.question_schema)
+            : row.question_schema || {};
+      } catch {
+        schema = {};
       }
-    }));
+
+      if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+        schema = {};
+      }
+
+      const fromOptions =
+        Array.isArray(schema.options) && schema.options.length > 0
+          ? Number(schema.options[0].points)
+          : null;
+      const storedMaxPoints = Number(row.max_points);
+      const maxPoints =
+        Number.isFinite(storedMaxPoints) && storedMaxPoints > 0
+          ? storedMaxPoints
+          : fromOptions ?? 0;
+
+      return {
+        id: row.id,
+        order: row.order,
+        max_points: Number.isFinite(maxPoints) ? maxPoints : 0,
+        question_schema: {
+          ...schema,
+          reference: schema.reference ?? row.reference,
+          description: schema.description ?? row.description
+        },
+        area: {
+          name: row.area
+        }
+      };
+    });
 
   } catch (error) {
     console.error("❌ Error obteniendo preguntas:", error);
@@ -313,41 +427,58 @@ ipcMain.handle('db:obtener-respuestas-alumno', async (event, { id_student, id_st
   }
 });
 
-// 3. Guardar o Actualizar Resultados por Pregunta (Espejo de FastAPI) con Knex
+// 3. Guardar o actualizar resultados por alumno + pregunta + estación.
+// El índice único de la migración permite un upsert atómico y evita duplicados.
 ipcMain.removeHandler('db:guardar-resultado');
 ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
+  if (!Array.isArray(listaResultados) || listaResultados.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const normalizados = listaResultados.map((resultado) => {
+    const idStudent = Number(resultado.id_student);
+    const idQuestion = Number(resultado.id_question);
+    const idStation = Number(resultado.id_station);
+
+    if (![idStudent, idQuestion, idStation].every(Number.isFinite)) {
+      throw new Error(
+        "Resultado inválido: faltan id_student, id_question o id_station."
+      );
+    }
+
+    return {
+      id_student: idStudent,
+      id_question: idQuestion,
+      id_station: idStation,
+      points: Number.isFinite(Number(resultado.points))
+        ? Number(resultado.points)
+        : 0,
+      answer_schema:
+        typeof resultado.answer_schema === "string"
+          ? resultado.answer_schema
+          : JSON.stringify(resultado.answer_schema || {}),
+      sincronizado: false
+    };
+  });
+
   return db.transaction(async (trx) => {
     try {
-      // Recorremos el lote de preguntas que nos manda el frontend para ese alumno
-      for (const resultado of listaResultados) {
-        
-        // Buscamos si ya existe una nota previa del alumno para ESTA pregunta concreta
-        const existe = await trx('resultados')
-          .where({ 
-            id_student: resultado.id_student, 
-            id_question: resultado.id_question 
-          })
-          .first();
-
-        if (existe) {
-          // Si el médico ha cambiado el switch, actualizamos los puntos y el JSON
-          await trx('resultados')
-            .where({ id: existe.id })
-            .update({
-              points: resultado.points,
-              answer_schema: resultado.answer_schema,
-              sincronizado: false,
-              evaluado_en: db.fn.now() // Actualizamos la estampa de tiempo
-            });
-        } else {
-          // Si es la primera vez que se evalúa esta pregunta para el alumno, la insertamos
-          await trx('resultados').insert(resultado);
-        }
+      for (const resultado of normalizados) {
+        await trx("resultados")
+          .insert(resultado)
+          .onConflict(["id_student", "id_question", "id_station"])
+          .merge({
+            points: resultado.points,
+            answer_schema: resultado.answer_schema,
+            sincronizado: false,
+            evaluado_en: trx.fn.now()
+          });
       }
 
-      console.log(`💾 Lote de ${listaResultados.length} respuestas procesado con éxito en SQLite.`);
-      return { success: true };
-      
+      console.log(
+        `💾 ${normalizados.length} respuesta(s) guardada(s) con upsert en SQLite.`
+      );
+      return { success: true, count: normalizados.length };
     } catch (error) {
       console.error("❌ Error en Knex al guardar el lote de resultados:", error);
       throw error;
@@ -358,7 +489,16 @@ ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
 // -- Envio respuestas el servidor --// 
 
 ipcMain.removeHandler('db:sincronizar-respuestas-al-servidor');
-ipcMain.handle('db:sincronizar-respuestas-al-servidor', async () => {
+ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => {
+  if (syncInProgress) {
+    return {
+      success: false,
+      error: "Ya hay una sincronización en curso. Espera a que termine."
+    };
+  }
+
+  syncInProgress = true;
+
   try {
     // 1. Extraemos de SQLite todas las respuestas locales que aún NO se han subido
     const registrosPendientes = await db('resultados')
@@ -393,40 +533,89 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async () => {
 
     console.log(`📡 Enviando un lote masivo de ${payloadParaFastAPI.length} respuestas a FastAPI...`);
 
-    // 3. Enviamos el lote mediante un único POST HTTP masivo
+    // 3. Enviamos el lote mediante un único POST HTTP masivo.
     const apiBase = await settings.getApiBaseUrl();
-    const response = await fetch(`${apiBase}/backend/api/v1/answers/bulk-sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // 'Authorization': `Bearer ${tuToken}` <- Añádelo si tu endpoint requiere token
-      },
-      body: JSON.stringify(payloadParaFastAPI)
-    });
+    const headers = { "Content-Type": "application/json" };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const signal =
+      typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(30000)
+        : undefined;
+
+    const response = await fetch(
+      `${apiBase}/backend/api/v1/answers/bulk-sync`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payloadParaFastAPI),
+        ...(signal ? { signal } : {})
+      }
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`El servidor respondió con código ${response.status}: ${errorText}`);
+      throw new Error(
+        `El servidor respondió con código ${response.status}: ${errorText}`
+      );
     }
 
     const dataJson = await response.json();
     console.log("🎉 Servidor FastAPI respondió con éxito:", dataJson);
 
-    // 4. Si el servidor las procesó correctamente, actualizamos el portátil poniendo sincronizado = true
-    const idsSincronizados = registrosPendientes.map(p => p.id);
-    await db('resultados')
-      .whereIn('id', idsSincronizados)
-      .update({ sincronizado: true }); // o 1
+    // 4. Solo marcamos como sincronizado si el servidor confirma TODO el lote.
+    const esperados = payloadParaFastAPI.length;
+    const procesados = Number(dataJson.inserted_or_updated);
 
-    return { 
-      success: true, 
-      message: `¡Sincronización masiva exitosa! ${dataJson.inserted_or_updated} registros subidos.`,
-      count: dataJson.inserted_or_updated 
+    if (!Number.isFinite(procesados) || procesados < esperados) {
+      throw new Error(
+        `El servidor confirmó ${dataJson?.inserted_or_updated ?? 0} de ${esperados} respuestas. ` +
+          "No se marcarán como sincronizadas y se reintentará el envío."
+      );
+    }
+
+    const idsSincronizados = registrosPendientes.map((p) => p.id);
+    await db("resultados")
+      .whereIn("id", idsSincronizados)
+      .update({ sincronizado: true });
+
+    return {
+      success: true,
+      message: `¡Sincronización masiva exitosa! ${procesados} registros subidos.`,
+      count: procesados
     };
-
   } catch (error) {
-    console.error("❌ Fallo crítico en el proceso de sincronización masiva:", error);
-    return { success: false, error: error.message };
+    console.error(
+      "❌ Fallo crítico en el proceso de sincronización masiva:",
+      error
+    );
+
+    const message =
+      error.name === "TimeoutError" || error.name === "AbortError"
+        ? "La sincronización tardó más de 30 segundos y se canceló. Se reintentará."
+        : error.message;
+
+    return { success: false, error: message };
+  } finally {
+    syncInProgress = false;
+  }
+});
+
+// Número de respuestas locales pendientes de subir al servidor.
+ipcMain.handle("db:contar-pendientes", async () => {
+  try {
+    const row = await db("resultados")
+      .where({ sincronizado: false })
+      .count({ n: "*" })
+      .first();
+
+    return Number(row?.n || 0);
+  } catch (error) {
+    console.error("Error contando respuestas pendientes:", error);
+    return 0;
   }
 });
 

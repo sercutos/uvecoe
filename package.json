@@ -1,7 +1,7 @@
 {
   "name": "uvecoe",
   "version": "1.0.0",
-  "description": "",
+  "description": "UVECOE - Evaluación ECOE con soporte offline",
   "main": "main.js",
   "scripts": {
     "dev": "vite",
@@ -11,13 +11,55 @@
     "start:clean": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"npm:electron:dev:clean\"",
     "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "pack": "electron-builder --dir",
-    "dev:clean": "npm run start:clean"
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "dist:win:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-signed.ps1",
+    "dev:clean": "npm run start:clean",
+    "postinstall": "electron-builder install-app-deps"
   },
   "build": {
-    "appId": "com.example.myapp",
+    "appId": "com.uv.ecoe",
+    "productName": "UVECOE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**/*",
+      "src/db/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "artifactName": "UVECOE-${version}-setup.${ext}",
     "win": {
-      "target": "nsis"
+      "icon": "assets/images/icono.png",
+      "forceCodeSigning": true,
+      "signtoolOptions": {
+        "signingHashAlgorithms": [
+          "sha256"
+        ],
+        "rfc3161TimeStampServer": "http://timestamp.digicert.com"
+      },
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "UVECOE"
     }
   },
   "keywords": [],

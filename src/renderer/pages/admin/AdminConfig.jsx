@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getApiBaseUrl } from "../../utils/apiConfig";
+import { fetchStationData } from "../../utils/stationData";
 
 export default function AdminConfig({ onConfigSuccess }) {
   const [ecoes, setEcoes] = useState([]);
@@ -97,7 +98,7 @@ export default function AdminConfig({ onConfigSuccess }) {
     fetchStations();
     }, [selectedEcoe]);
     
-  // 3. Descarga en cadena y guardado en SQLite
+  // 3. Descarga completa y guardado en SQLite
   const handleConfigurarPortatil = async (e) => {
     e.preventDefault();
     if (!selectedEcoe || !selectedStation) return;
@@ -106,106 +107,63 @@ export default function AdminConfig({ onConfigSuccess }) {
     setStatusMessage("⏳ Descargando datos del servidor...");
 
     try {
-        const token = sessionStorage.getItem("token_ecoe");
-        // Encontrar el objeto de la estación elegida para guardar su nombre real
-        const estacionActiva = stations.find(s => s.id === Number(selectedStation));
-            // A) GUARDAR CONFIGURACIÓN BÁSICA LOCAL
-            // Asumimos que tu endpoint de estaciones te da el block_id asociado. Si no, ponle un valor temporal.
+      const estacionActiva = stations.find(
+        (s) => Number(s.id) === Number(selectedStation)
+      );
 
-        
-        const resBlocks = await fetch(
-          `${getApiUrl()}/blocks?station_id=${selectedStation}`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${token}`
-            }
-          }
-        );
-        const blocksData = await resBlocks.json();
-        const block = blocksData?.items?.[0];
-        //console.log("BLOCK:", block);
-        const configLocal = {
-            ecoe_id: Number(selectedEcoe),
-            station_id: Number(selectedStation),
-            station_name: estacionActiva?.name || `Estación ${selectedStation}`,
-            block_id: block?.id || null
-        };
-        await window.api.guardarConfiguracion(configLocal);
-        
-        // B) DESCARGAR PREGUNTAS (RÚBRICA) DE LA ESTACIÓN
-        setStatusMessage("⏳ Descargando rúbrica de la estación...");
-        const resPreguntas = await fetch(`${getApiUrl()}/questions?station_id=${selectedStation}&per_page=500`, {
-            method: "GET",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
-            }
-        });
+      setStatusMessage(
+        "⏳ Descargando bloque, rúbrica, alumnos y planificación..."
+      );
 
-        if (!resPreguntas.ok) {
-            throw new Error(`Error en el servidor al descargar preguntas (Status: ${resPreguntas.status})`);
-        }
-        const dataPreguntas = await resPreguntas.json();
-        const questions = dataPreguntas.items || dataPreguntas;
-      
-        // C) DESCARGAR ALUMNOS (PLANNER) DE LA ESTACIÓN
-        setStatusMessage("⏳ Descargando lista de estudiantes asignados...");
-        //const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=100&station_id=${selectedStation}`, {
-        const resAlumnos = await fetch(`${getApiUrl()}/students?per_page=500&id_ecoe=${selectedEcoe}`, {
-            method: "GET",
-            headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-            }
-        });
-        if (!resAlumnos.ok) {
-            throw new Error(`Error en el servidor al descargar estudiantes (Status: ${resAlumnos.status})`);
-        }
+      const data = await fetchStationData({
+        ecoeId: Number(selectedEcoe),
+        stationId: Number(selectedStation)
+      });
 
-        const dataAlumnos = await resAlumnos.json();
-        const students = dataAlumnos.items || dataAlumnos;
-        // C.2) 🚀 NUEVO: DESCARGAR USUARIOS DE LA ORGANIZACIÓN
-        setStatusMessage("⏳ Descargando lista de usuarios y evaluadores...");
-        const resUsers = await fetch(`${getApiUrl()}/users`, { // 👈 Revisa si este es tu path exacto
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        });
+      const configLocal = {
+        ecoe_id: Number(selectedEcoe),
+        station_id: Number(selectedStation),
+        station_name:
+          estacionActiva?.name ||
+          data.station?.name ||
+          `Estación ${selectedStation}`,
+        block_id: data.block.id,
+        station_order:
+          data.station?.order ?? estacionActiva?.order ?? null
+      };
 
-        if (!resUsers.ok) {
-          throw new Error(`Error en el servidor al descargar usuarios (Status: ${resUsers.status})`);
-        }
+      setStatusMessage(
+        "⏳ Almacenando información en la base de datos local SQLite..."
+      );
 
-        const dataUsers = await resUsers.json();
-        const users = dataUsers.items || dataUsers;
-        // D) VOLCAR DATOS A SQLITE MEDIANTE IPC
-        setStatusMessage("⏳ Almacenando información en la base de datos local SQLite...");
-        
-        // Enviamos a Electron las preguntas, estudiantes y usuarios para que haga los inserts masivos
-        await window.api.invoke("db:guardarDatosIniciales", { 
-          stationId: configLocal.station_id,
-          id_block: block?.id ?? null,
-          questions, 
-          students, 
-          users 
-        });
-        //console.log("block recibido:", block);
-        //console.log("typeof block:", typeof block);
-        setStatusMessage("✅ ¡Portátil configurado con éxito y listo para trabajar Offline!");
-        setLoading(false);
+      // Primero los datos y al final la configuración: si algo falla,
+      // el portátil no queda marcado como configurado a medias.
+      await window.api.guardarDatosIniciales({
+        stationId: configLocal.station_id,
+        id_block: configLocal.block_id,
+        questions: data.questions,
+        students: data.students,
+        users: data.users,
+        shifts: data.shifts,
+        rounds: data.rounds,
+        planners: data.planners
+      });
 
-        // Notificar al componente padre que la configuración terminó para cambiar de vista
-        if (onConfigSuccess) {
-            setTimeout(() => onConfigSuccess(), 1500);
-        }
+      await window.api.guardarConfiguracion(configLocal);
 
+      setStatusMessage(
+        "✅ ¡Portátil configurado con éxito y listo para trabajar Offline!"
+      );
+      setLoading(false);
+
+      if (onConfigSuccess) {
+        setTimeout(() => onConfigSuccess(), 1500);
+      }
     } catch (error) {
       console.error("Error en la sincronización inicial:", error);
-      setStatusMessage("❌ Error crítico durante la descarga. Revisa la consola.");
+      setStatusMessage(
+        `❌ Error crítico durante la descarga: ${error.message}`
+      );
       setLoading(false);
     }
   };

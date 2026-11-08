@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Toolbar from "../../components/Toolbar";
 
-import { CssBaseline, Container, Grid, Paper, Typography, Switch, Box, Button, FormControlLabel, IconButton, CircularProgress } from "@mui/material";
+import { CssBaseline, Container, Paper, Typography, Switch, Box, Button, FormControlLabel, IconButton, CircularProgress, Alert } from "@mui/material";
+import Grid from "@mui/material/GridLegacy";
 
 // Importamos iconos de flechas 
 import ArrowBackIosNewIcon from '@mui/icons-material/ArrowBackIosNew';
@@ -10,6 +11,26 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 import { useNavigate } from "react-router-dom";
 import { fetchWithAuth } from "../../utils/api"; 
+
+// Rotación de los alumnos de un planner por estación.
+// Los alumnos llegan ordenados por planner_order 1..N.
+// La estación k empieza por el alumno k y rota hacia k-1:
+//   Estación 1 → 1, 12, 11, ..., 2
+//   Estación 2 → 2, 1, 12, ..., 3
+function reorderStudentsForStation(studentsList, stationOrder) {
+  const total = studentsList.length;
+  if (total === 0) return studentsList;
+
+  const order = Number(stationOrder) || 1;
+  const start = ((order - 1) % total + total) % total;
+  const ordered = [];
+
+  for (let i = 0; i < total; i += 1) {
+    ordered.push(studentsList[(start - i + total) % total]);
+  }
+
+  return ordered;
+}
 
 export default function EvaluationPage() {
   const navigate = useNavigate();
@@ -22,12 +43,46 @@ export default function EvaluationPage() {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [saveError, setSaveError] = useState(null);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
+  const autoSyncRef = useRef(false);
   
   const currentStudent = students[currentStudentIndex] || null;
 
   const shiftCodeVisual = sessionStorage.getItem("selected_shift_code") || "-";
   const roundCodeVisual = sessionStorage.getItem("selected_round_code") || "-";
+
+  // Sincronización silenciosa en segundo plano. No bloquea la evaluación:
+  // si falla (sin WiFi), las respuestas quedan pendientes y se reintenta.
+  const runAutoSync = async () => {
+    if (autoSyncRef.current) return;
+
+    const token = sessionStorage.getItem("token_ecoe");
+    if (!token || !window.api?.sincronizarRespuestas) return;
+
+    autoSyncRef.current = true;
+
+    try {
+      const result = await window.api.sincronizarRespuestas(token);
+
+      if (result?.success) {
+        window.dispatchEvent(new Event("uvecoe:pending-changed"));
+      } else if (result?.error) {
+        console.warn("[AUTO-SYNC]", result.error);
+      }
+    } catch (syncError) {
+      console.warn("[AUTO-SYNC] No se pudo sincronizar:", syncError);
+    } finally {
+      autoSyncRef.current = false;
+    }
+  };
+
+  // Intento al entrar y cada 5 minutos mientras la evaluación esté abierta.
+  useEffect(() => {
+    runAutoSync();
+    const interval = setInterval(runAutoSync, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // --- LOGICA DE PETICIONES CON ALUMNOS Y PREGUNTAS DINÁMICAS ---
   useEffect(() => {
@@ -38,17 +93,32 @@ export default function EvaluationPage() {
 
         const shiftId = sessionStorage.getItem("selected_shift_id");
         const roundId = sessionStorage.getItem("selected_round_id");
+        let plannerId = null;
 
         if (!shiftId || !roundId) {
-          throw new Error("No se ha detectado una selección válida de Turno o Ronda.");
+          // Si se entra directamente en /evaluation (p. ej. desde el icono
+          // "Evaluación Activa" del Toolbar), llevamos al primer paso que falte
+          // en lugar de mostrar un error.
+          if (!sessionStorage.getItem("selected_date_string")) {
+            navigate("/", { replace: true });
+          } else if (!roundId) {
+            navigate("/rounds", { replace: true });
+          } else {
+            navigate("/turns", { replace: true });
+          }
+
+          setLoading(false);
+          return;
         }
 
         // ==========================================
-        // PASO 0: OBTENER CONFIGURACIÓN LOCAL DE SQLITE (ECOE_ID Y STATION_ID)
+        // PASO 0: CONFIGURACIÓN LOCAL DE SQLITE
         // ==========================================
         const configLocal = await window.api.obtenerConfiguracion();
         const ecoeId = configLocal?.ecoe_id;
         const stationIdConfigurado = configLocal?.station_id;
+        const stationOrderConfigurado = configLocal?.station_order;
+        const blockIdConfigurado = configLocal?.block_id;
 
         if (!ecoeId || !stationIdConfigurado) {
           throw new Error("El equipo no cuenta con una configuración local de estación.");
@@ -57,96 +127,214 @@ export default function EvaluationPage() {
         let targetStation = null;
         let rawStudents = [];
         let rawQuestions = [];
+        let studentsFromApi = false;
+        let questionsFromApi = false;
 
+        // ==========================================
+        // 1. MODO ONLINE (si hay red)
+        // ==========================================
         try {
-          // ==========================================
-          // MODO ONLINE: Intentar consumir de FastAPI
-          // ==========================================
-          console.log(`[EVALUATION] Modo Online: Buscando estación ID ${stationIdConfigurado}...`);
+          console.log(`[EVALUATION] Modo Online: estación ${stationIdConfigurado}...`);
+
           const stationsData = await fetchWithAuth(`/stations?ecoe_id=${ecoeId}`);
           const stationList = stationsData?.items || (Array.isArray(stationsData) ? stationsData : []);
-          targetStation = stationList.find(s => Number(s.id) === Number(stationIdConfigurado)) || stationList[0];
+          targetStation =
+            stationList.find(
+              (s) => Number(s.id) === Number(stationIdConfigurado)
+            ) || null;
 
-          // Cargar Planificación y Alumnos online
-          const plannerData = await fetchWithAuth(`/planners?shift_id=${shiftId}&round_id=${roundId}`);
-          const plannerId = plannerData?.id || (plannerData?.items && plannerData.items[0]?.id) || plannerData[0]?.id;
+          const plannerData = await fetchWithAuth(
+            `/planners?shift_id=${shiftId}&round_id=${roundId}`
+          );
+          plannerId =
+            plannerData?.id ||
+            (plannerData?.items && plannerData.items[0]?.id) ||
+            plannerData[0]?.id ||
+            null;
 
           if (plannerId) {
-            const studentsData = await fetchWithAuth(`/students?planner_id=${plannerId}`);
+            const studentsData = await fetchWithAuth(
+              `/students?planner_id=${plannerId}&per_page=200`
+            );
             rawStudents = studentsData.items || studentsData || [];
+            studentsFromApi = rawStudents.length > 0;
           }
 
-          // Cargar preguntas online
-          const blocksData = await fetchWithAuth(`/blocks?station_id=${stationIdConfigurado}`);
-          const block = blocksData?.items?.[0] || (Array.isArray(blocksData) ? blocksData[0] : null);
-          if (block) {
-            const questionsData = await fetchWithAuth(`/questions?station_id=${stationIdConfigurado}&block_id=${block.id}&per_page=500`);
-            rawQuestions = Array.isArray(questionsData) ? questionsData : (questionsData.items || []);
-          }
+          const blocksData = await fetchWithAuth(
+            `/blocks?station_id=${stationIdConfigurado}`
+          );
+          const block =
+            blocksData?.items?.[0] ||
+            (Array.isArray(blocksData) ? blocksData[0] : null);
 
+          if (block?.id) {
+            const questionsData = await fetchWithAuth(
+              `/questions?station_id=${stationIdConfigurado}&block_id=${block.id}&per_page=200`
+            );
+            rawQuestions = Array.isArray(questionsData)
+              ? questionsData
+              : questionsData.items || [];
+            questionsFromApi = rawQuestions.length > 0;
+          }
         } catch (onlineError) {
-          // ==========================================
-          // MODO OFFLINE / CONTINGENCIA: Leer desde SQLite
-          // ==========================================
-          console.warn("[EVALUATION] Sin conexión. Conmutando a base de datos local SQLite...", onlineError.message);
-          
-          targetStation = { id: stationIdConfigurado, name: `Estación Local #${stationIdConfigurado}`, order: 1 };
-          
-          // Leer estudiantes locales precargados
-          if (window.api.obtenerEstudiantesLocales) {
-            rawStudents = await window.api.obtenerEstudiantesLocales();
-          } else {
-            // Fallback si ejecutas en navegador puro
-            rawStudents = [{ id: 111, name: "ALUMNO OFFLINE A", planner_order: 1 }, { id: 222, name: "ALUMNO OFFLINE B", planner_order: 2 }];
-          }
-
-          // Leer preguntas locales precargadas
-          if (window.api.obtenerPreguntasLocales) {
-            rawQuestions = await window.api.obtenerPreguntasLocales();
-          } else {
-            rawQuestions = [{ id: 99, question_schema: { reference: "Q-REF-01", description: "Pregunta Offline por defecto" }, area: { name: "General" } }];
-          }
+          console.warn(
+            "[EVALUATION] Sin conexión o error online. Se completará desde SQLite...",
+            onlineError.message
+          );
         }
 
-        // Validar y parsear Estación
-        setStationName(targetStation?.name || `Estación ${stationIdConfigurado}`);
+        // ==========================================
+        // 2. COMPLETAR DESDE SQLITE (offline o datos parciales)
+        // ==========================================
+        if (!targetStation) {
+          targetStation = {
+            id: stationIdConfigurado,
+            name:
+              configLocal?.station_name ||
+              `Estación Local #${stationIdConfigurado}`,
+            order: stationOrderConfigurado ?? null,
+            id_parent_station: null
+          };
+        }
+
+        if (!plannerId) {
+          const plannerLocal = await window.api.obtenerPlanner(
+            Number(shiftId),
+            Number(roundId)
+          );
+          plannerId = plannerLocal?.id ?? null;
+        }
+
+        // Último recurso: el planner que guardó SelectTurnPage.
+        if (!plannerId) {
+          plannerId = sessionStorage.getItem("selected_planner_id") || null;
+        }
+
+        if (!plannerId) {
+          throw new Error(
+            "No se encontró el planner para el turno y la ronda seleccionados. Vuelva a descargar la planificación."
+          );
+        }
+
+        sessionStorage.setItem("selected_planner_id", String(plannerId));
+
+        if (!rawStudents || rawStudents.length === 0) {
+          rawStudents = await window.api.obtenerEstudiantesPlanner(
+            Number(plannerId)
+          );
+        }
+
+        if (!rawQuestions || rawQuestions.length === 0) {
+          rawQuestions = await window.api.obtenerPreguntasLocales({
+            stationId: Number(stationIdConfigurado),
+            blockId: blockIdConfigurado ?? null
+          });
+        }
+
+        // Si alumnos o preguntas vienen de la API, asegurarlos en SQLite antes
+        // de permitir la evaluación. Así las FKs de resultados no fallan.
+        if (studentsFromApi || questionsFromApi) {
+          if (!window.api?.asegurarReferencias) {
+            throw new Error(
+              "No se pudo asegurar la referencia local de alumnos/preguntas (preload desactualizado)."
+            );
+          }
+
+          await window.api.asegurarReferencias({
+            students: studentsFromApi ? rawStudents : [],
+            questions: questionsFromApi ? rawQuestions : [],
+            stationId: Number(stationIdConfigurado),
+            id_block: blockIdConfigurado ?? null
+          });
+        }
+
+        // Validar el orden de la estación: sin él no se puede rotar.
+        const stationOrder = Number(targetStation?.order);
+
+        if (!Number.isFinite(stationOrder) || stationOrder < 1) {
+          throw new Error(
+            "Falta el orden de la estación para calcular la rotación. Reconfigure el portátil con conexión."
+          );
+        }
+
+        setStationName(
+          targetStation?.name || `Estación ${stationIdConfigurado}`
+        );
 
         // Procesar Alumnos de forma uniforme
-        if (rawStudents.length === 0) {
-          throw new Error("No hay estudiantes cargados para este entorno de evaluación.");
+        if (!Array.isArray(rawStudents) || rawStudents.length === 0) {
+          throw new Error(
+            "No hay alumnos asignados al planner de este turno. Revise la planificación."
+          );
+        }
+
+        if (rawStudents.length !== 12) {
+          console.warn(
+            `[EVALUATION] El planner ${plannerId} tiene ${rawStudents.length} alumnos; se esperaban 12.`
+          );
         }
 
         const mappedStudents = rawStudents.map((student, idx) => {
-          const ordenReal = student.planner_order !== undefined && student.planner_order !== null
-            ? Number(student.planner_order)
-            : idx + 1;
+          const ordenReal =
+            student.planner_order !== undefined &&
+            student.planner_order !== null
+              ? Number(student.planner_order)
+              : idx + 1;
 
           return {
             id_estudiante: student.id || student.id_estudiante,
             num: ordenReal,
-            dni: student.dni || "", 
-            name: `${student.surnames || ""}, ${student.name || ""}`.trim().toUpperCase() || student.name,
-            turno: shiftCodeVisual, 
+            dni: student.dni || "",
+            name:
+              `${student.surnames || ""}, ${student.name || ""}`.trim().toUpperCase() ||
+              student.name,
+            turno: shiftCodeVisual,
             rueda: roundCodeVisual
           };
         });
 
         mappedStudents.sort((a, b) => a.num - b.num);
-        const reorderedStudents = reorderStudentsLegacy(mappedStudents, targetStation);
+        const reorderedStudents = reorderStudentsForStation(
+          mappedStudents,
+          stationOrder
+        );
 
         // Procesar Preguntas de forma uniforme
-        if (rawQuestions.length === 0) {
-          throw new Error("La estación de examen no contiene preguntas evaluables disponibles.");
+        if (!Array.isArray(rawQuestions) || rawQuestions.length === 0) {
+          throw new Error(
+            "La estación de examen no contiene preguntas evaluables disponibles."
+          );
         }
 
         rawQuestions.sort((a, b) => (a.order || 0) - (b.order || 0));
 
-        const mappedQuestions = rawQuestions.map((q) => ({
-          id_pregunta_db: q.id || q.id_pregunta_db,
-          id: q.question_schema?.reference || q.id_visual || `Q-${q.id}`,
-          text: q.question_schema?.description || q.texto_pregunta || "Pregunta sin descripción",
-          area: q.area?.name || q.area_nombre || "General"
-        }));
+        const mappedQuestions = rawQuestions.map((q) => {
+          const fromOptions =
+            Array.isArray(q.question_schema?.options) &&
+            q.question_schema.options.length > 0
+              ? Number(q.question_schema.options[0].points)
+              : null;
+          const storedMaxPoints = Number(q.max_points);
+          const maxPoints =
+            Number.isFinite(storedMaxPoints) && storedMaxPoints > 0
+              ? storedMaxPoints
+              : fromOptions ?? 0;
+
+          return {
+            id_pregunta_db: q.id || q.id_pregunta_db,
+            id: q.question_schema?.reference || q.id_visual || `Q-${q.id}`,
+            text:
+              q.question_schema?.description ||
+              q.texto_pregunta ||
+              "Pregunta sin descripción",
+            area: q.area?.name || q.area_nombre || "General",
+            type: q.question_schema?.type || "checkbox",
+            options: Array.isArray(q.question_schema?.options)
+              ? q.question_schema.options
+              : [],
+            max_points: Number.isFinite(maxPoints) ? maxPoints : 0
+          };
+        });
 
         setStudents(reorderedStudents);
         setQuestions(mappedQuestions);
@@ -163,57 +351,6 @@ export default function EvaluationPage() {
     cargarTodoElFlujo();
   }, [shiftCodeVisual, roundCodeVisual]);
 
-  // --- FUNCIÓN ADAPTADA DE REORDENAMIENTO LEGACY ---
-  const reorderStudentsLegacy = (studentsList, station) => {
-    const arrStudents = [];
-    if (studentsList.length < 1) return studentsList;
-
-    const stationOrder = station.order || 1;
-
-    if (!station.parent_station && !station.parentStation) {
-      arrStudents.push(studentsList[stationOrder - 1]);
-    } else {
-      arrStudents.push({});
-    }
-
-    let counter = 0;
-    while (counter < studentsList.length) {
-      const idx = studentsList.indexOf(arrStudents[arrStudents.length - 1]);
-      
-      const auxStudent = idx > 0
-        ? studentsList[idx - 1]
-        : (idx === 0)
-          ? studentsList[studentsList.length - 1]
-          : ((stationOrder - 1) - 1 >= 0)
-            ? studentsList[(stationOrder - 1) - 1]
-            : studentsList[studentsList.length - 1];
-            
-      arrStudents.push(auxStudent);
-      counter++;
-    }
-
-    if (arrStudents[0] && arrStudents[0].dni) {
-      const lastIndex = arrStudents.lastIndexOf(studentsList[stationOrder - 1]);
-      delete arrStudents[lastIndex];
-    } else {
-      arrStudents.push(studentsList[stationOrder - 1]);
-    }
-
-    let cleanArrStudents = [...arrStudents];
-    cleanArrStudents = cleanArrStudents.slice(1, cleanArrStudents.length - 1).filter(Boolean);
-
-    if (arrStudents[0] || cleanArrStudents.length > 0) {
-      cleanArrStudents.unshift(arrStudents[0]);
-    } else { 
-      cleanArrStudents.unshift(...studentsList);
-      let n = cleanArrStudents.length;
-      while (n < stationOrder) {
-        cleanArrStudents.unshift({ num: n + 1 });
-        n++;
-      }
-    }
-    return cleanArrStudents;
-  };
 
   // --- Recuperar las respuestas del alumno de SQLite al cambiar de alumno o iniciar la pantalla
   useEffect(() => {
@@ -231,10 +368,10 @@ export default function EvaluationPage() {
         });
 
         // 2. Creamos el array de estados mapeando contra nuestras preguntas en pantalla
-        // Si el alumno tiene fila guardada con points === 1, se pone true; si no, false.
+        // Cualquier puntuación mayor que 0 (1, 0.5...) significa switch activo.
         const nuevosSwitches = questions.map((q) => {
           const registroGuardado = respuestasGuardadas.find(r => r.id_question === q.id_pregunta_db);
-          return registroGuardado ? registroGuardado.points === 1 : false;
+          return registroGuardado ? Number(registroGuardado.points) > 0 : false;
         });
 
         setAnswers(nuevosSwitches);
@@ -274,44 +411,77 @@ export default function EvaluationPage() {
   const handleToggle = async (index) => {
     if (!currentStudent) return;
 
-    // 1. Calculamos el nuevo estado que va a tener el switch inmediatamente
-    const nuevoValorSwitch = !answers[index];
+    const previousValue = Boolean(answers[index]);
+    const nuevoValorSwitch = !previousValue;
 
-    // 2. Actualizamos el estado visual (UI) al instante para que no tenga lag
+    // Actualizamos la UI al instante para que no tenga lag.
     const newAnswers = [...answers];
     newAnswers[index] = nuevoValorSwitch;
     setAnswers(newAnswers);
+    setSaveError(null);
 
-    // 3. Obtenemos la pregunta modificada y la configuración de la estación
     const q = questions[index];
     const configLocal = await window.api.obtenerConfiguracion();
     const id_station = configLocal?.station_id || 1;
 
-    // 4. Creamos el esquema idéntico al que espera tu API
+    // Puntos reales publicados por el servidor en la rúbrica.
+    const selectedOption = q.options?.[0] || null;
+    const optionPoints = Number(selectedOption?.points ?? q.max_points ?? 0);
+    const points = nuevoValorSwitch
+      ? Number.isFinite(optionPoints)
+        ? optionPoints
+        : 0
+      : 0;
+
+    // Esquema idéntico al que espera la API.
     const schema = {
-      type: "checkbox",
-      selected: nuevoValorSwitch ? [{ id_option: 1 }] : []
+      type: q.type || "checkbox",
+      selected: nuevoValorSwitch
+        ? [{ id_option: selectedOption?.id_option ?? 1 }]
+        : []
     };
 
-    // 5. Preparamos el payload en formato array (como lo requiere el main.js)
-    // Pasamos solo UN elemento, el que acaba de mutar.
     const loteFilaUnica = [{
       id_student: currentStudent.id_estudiante,
       id_question: q.id_pregunta_db,
       id_station: Number(id_station),
-      points: nuevoValorSwitch ? 1 : 0,
+      points,
       answer_schema: JSON.stringify(schema),
       sincronizado: false
     }];
 
-    // 6. Impactamos en SQLite en segundo plano
-    if (window.api && window.api.invoke) {
-      try {
-        await window.api.invoke("db:guardar-resultado", loteFilaUnica);
-        console.log(`⚡ [AUTO-GUARDADO] Pregunta ${q.id} guardada como: ${nuevoValorSwitch ? 'SÍ' : 'NO'}`);
-      } catch (errDb) {
-        console.error("❌ Fallo en el auto-guardado inmediato:", errDb);
-      }
+    if (!window.api?.invoke) {
+      setAnswers((prev) => {
+        const reverted = [...prev];
+        reverted[index] = previousValue;
+        return reverted;
+      });
+      setSaveError(
+        "No se pudo guardar la respuesta: falta el puente de Electron."
+      );
+      return;
+    }
+
+    try {
+      await window.api.invoke("db:guardar-resultado", loteFilaUnica);
+      setSaveError(null);
+      window.dispatchEvent(new Event("uvecoe:pending-changed"));
+      console.log(
+        `⚡ [AUTO-GUARDADO] Pregunta ${q.id} guardada como: ${nuevoValorSwitch ? "SÍ" : "NO"}`
+      );
+    } catch (errDb) {
+      // Si SQLite rechaza la escritura, devolvemos el switch a su estado
+      // anterior para que el evaluador no vea una respuesta falsamente guardada.
+      setAnswers((prev) => {
+        const reverted = [...prev];
+        reverted[index] = previousValue;
+        return reverted;
+      });
+      setSaveError(
+        `No se pudo guardar la respuesta de "${q.id}". ` +
+          "Revisa la base de datos local y vuelve a intentarlo."
+      );
+      console.error("❌ Fallo en el auto-guardado inmediato:", errDb);
     }
   };
   
@@ -333,8 +503,13 @@ export default function EvaluationPage() {
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
+      runAutoSync();
       navigate("/turns"); // Fin del examen
+      return;
     }
+
+    // Al terminar un alumno, intentamos enviar lo pendiente sin bloquear.
+    runAutoSync();
   };
 
   const handlePrevStudent = () => {
@@ -392,7 +567,16 @@ export default function EvaluationPage() {
       <CssBaseline />
       <Toolbar />
       <Container maxWidth="lg" sx={{ mt: 10 }}>
-        
+        {saveError && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            onClose={() => setSaveError(null)}
+          >
+            {saveError}
+          </Alert>
+        )}
+
         {/* TARJETA DEL ALUMNO ACTUAL */}
         <Paper elevation={1} sx={{ p: 2, mb: 3, backgroundColor: "#fff", position: "relative", minHeight: "72px", display: "flex", alignItems: "center" }}>
           <Box sx={{ pr: "320px", display: "flex", alignItems: "center", gap: 2, width: "100%", minWidth: 0 }}>

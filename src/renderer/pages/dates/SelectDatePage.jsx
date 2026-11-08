@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CssBaseline, Container, Typography, Box, CircularProgress } from "@mui/material";
-import Grid from "@mui/material/Grid"; 
+import Grid from "@mui/material/GridLegacy";
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import SyncIcon from '@mui/icons-material/Sync';
 import LoginIcon from '@mui/icons-material/Login';
@@ -37,16 +37,26 @@ export default function SelectDatePage() {
           turnos = data.items || data || [];
           console.log("[FECHAS] Datos de turnos obtenidos de la API.");
         } catch (onlineError) {
-          // 3. 🚀 MODO CONTINGENCIA OFFLINE: Si la red cae, simulamos o extraemos del entorno local
-          console.warn("[FECHAS] Servidor no alcanzable. Generando fechas en modo de contingencia...", onlineError.message);
-          
-          // Fallback inteligente: Generamos el día de hoy como fecha del examen para que el evaluador no se quede bloqueado
-          const hoy = new Date();
-          turnos = [{
-            id: 999,
-            time_start: { $date: hoy.toISOString() },
-            name: "Turno Único de Contingencia"
-          }];
+          // 3. MODO OFFLINE: leer los turnos descargados en SQLite.
+          console.warn(
+            "[FECHAS] Servidor no alcanzable. Leyendo turnos locales...",
+            onlineError.message
+          );
+
+          if (!window.api?.obtenerShifts) {
+            throw new Error(
+              "Modo offline no disponible: falta el puente de Electron."
+            );
+          }
+
+          const turnosLocales = await window.api.obtenerShifts(ecoeId);
+          turnos = Array.isArray(turnosLocales) ? turnosLocales : [];
+
+          if (turnos.length === 0) {
+            throw new Error(
+              "No hay turnos descargados localmente. Configure el portátil con conexión antes de trabajar offline."
+            );
+          }
         }
 
         // Guardamos todos los turnos resultantes en caché de sesión para las siguientes pantallas

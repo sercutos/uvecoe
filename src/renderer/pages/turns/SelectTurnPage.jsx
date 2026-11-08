@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CssBaseline, Container, Typography, Box } from "@mui/material";
-import Grid from "@mui/material/Grid"; 
+import Grid from "@mui/material/GridLegacy";
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import SyncIcon from '@mui/icons-material/Sync';
 import LoginIcon from '@mui/icons-material/Login';
@@ -10,43 +10,97 @@ import { useNavigate } from "react-router-dom";
 export default function SelectTurnPage() {
   const navigate = useNavigate();
   const [turnosFiltrados, setTurnosFiltrados] = useState([]);
+  const [loadingTurnos, setLoadingTurnos] = useState(false);
+  const [error, setError] = useState(null);
 
   // Recuperamos de la sesión el día que pulsó el usuario (ej: "11/05/2026")  
   const diaSeleccionado = sessionStorage.getItem("selected_date_string");
 
   useEffect(() => {
-    // 1. Recuperamos los turnos totales que guardó la página anterior
-    const turnosGuardados = sessionStorage.getItem("todos_los_turnos");
-    
-    if (turnosGuardados && diaSeleccionado) {
-      const todosLosTurnos = JSON.parse(turnosGuardados);
+    const cargarTurnos = async () => {
+      if (!diaSeleccionado) return;
 
-      // 2. Filtramos para quedarnos SOLO con los turnos de ese día
-      const filtrados = todosLosTurnos.filter(turno => {
-        // 🚀 CORREGIDO: Tolerancia al modo online (time_start.$date) u offline (time_start)
-        const timestamp = turno.time_start?.$date || turno.time_start;
-        if (!timestamp) return false;
+      setLoadingTurnos(true);
+      setError(null);
 
-        const fechaTurno = new Date(timestamp).toLocaleDateString("es-ES", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric"
+      try {
+        // 1. Primero usamos la caché de sesión que dejó SelectDatePage.
+        let todosLosTurnos = [];
+        const turnosGuardados = sessionStorage.getItem("todos_los_turnos");
+
+        if (turnosGuardados) {
+          todosLosTurnos = JSON.parse(turnosGuardados);
+        } else {
+          // 2. Si no hay caché (p. ej. tras reiniciar), leemos SQLite.
+          const configLocal = await window.api.obtenerConfiguracion();
+          const ecoeId = configLocal?.ecoe_id;
+
+          if (!ecoeId) {
+            throw new Error("El terminal no está configurado.");
+          }
+
+          todosLosTurnos = await window.api.obtenerShifts(ecoeId);
+          sessionStorage.setItem(
+            "todos_los_turnos",
+            JSON.stringify(todosLosTurnos || [])
+          );
+        }
+
+        // 3. Filtramos para quedarnos SOLO con los turnos de ese día.
+        const filtrados = (todosLosTurnos || []).filter((turno) => {
+          const timestamp = turno.time_start?.$date || turno.time_start;
+          if (!timestamp) return false;
+
+          const fechaTurno = new Date(timestamp).toLocaleDateString("es-ES", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric"
+          });
+
+          return fechaTurno === diaSeleccionado;
         });
 
-        return fechaTurno === diaSeleccionado;
-      });
+        setTurnosFiltrados(filtrados);
+      } catch (err) {
+        console.error("[TURNOS] Error cargando turnos:", err);
+        setError(err.message);
+        setTurnosFiltrados([]);
+      } finally {
+        setLoadingTurnos(false);
+      }
+    };
 
-      setTurnosFiltrados(filtrados);
-    }
+    cargarTurnos();
   }, [diaSeleccionado]);
 
-  const handleSelectTurn = (turnoId, shiftCode) => {
-    // Guardamos el ID del turno elegido para las siguientes pantallas (estudiantes, etc.)
+  const handleSelectTurn = async (turnoId, shiftCode) => {
+    // Guardamos el ID del turno elegido para las siguientes pantallas.
     sessionStorage.setItem("selected_shift_id", turnoId);
     sessionStorage.setItem("selected_shift_code", shiftCode || "ÚNICO");
-    
-    // Avanzamos a la pantalla de evaluación offline
-    navigate("/evaluation"); 
+
+    // Resolvemos el planner (turno + ronda) para que la evaluación offline
+    // sepa exactamente qué 12 alumnos pertenecen a este turno.
+    const roundId = sessionStorage.getItem("selected_round_id");
+
+    try {
+      if (window.api?.obtenerPlanner) {
+        const planner = await window.api.obtenerPlanner(turnoId, roundId);
+
+        if (planner?.id) {
+          sessionStorage.setItem("selected_planner_id", planner.id);
+        } else {
+          sessionStorage.removeItem("selected_planner_id");
+        }
+      }
+    } catch (plannerError) {
+      console.warn(
+        "[TURNOS] No se pudo resolver el planner local; la evaluación intentará resolverlo online.",
+        plannerError.message
+      );
+    }
+
+    // Avanzamos a la pantalla de evaluación.
+    navigate("/evaluation");
   };
 
   return (
@@ -73,6 +127,18 @@ export default function SelectTurnPage() {
         <Typography variant="h5" sx={{ mb: 4, fontWeight: "bold", color: "#333" }}>
           Turnos disponibles para el día {diaSeleccionado}:
         </Typography>
+
+        {loadingTurnos && (
+          <Typography variant="body1" sx={{ mb: 2, color: "text.secondary" }}>
+            Cargando turnos locales...
+          </Typography>
+        )}
+
+        {error && (
+          <Box bgcolor="#ffebee" p={3} borderRadius="8px" textAlign="center" sx={{ mb: 2 }}>
+            <Typography color="error" variant="h6">{error}</Typography>
+          </Box>
+        )}
 
         {/* REJILLA DINÁMICA DE BOTONES DE TURNOS */}
         <Grid container spacing={3}>

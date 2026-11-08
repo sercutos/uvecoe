@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Toolbar from "../../components/Toolbar";
-import { CssBaseline, Container, Grid, Paper, Typography, Switch, Box, Button, CircularProgress } from "@mui/material";
+import { CssBaseline, Container, Paper, Typography, Switch, Box, Button, CircularProgress } from "@mui/material";
+import Grid from "@mui/material/GridLegacy";
 
 export default function QuestionPage() {
   // 🚀 ESTADO: Guardamos las preguntas reales que vienen de SQLite

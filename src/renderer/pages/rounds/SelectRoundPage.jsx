@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { CssBaseline, Container, Typography, Box, CircularProgress } from "@mui/material";
-import Grid from "@mui/material/Grid";
+import Grid from "@mui/material/GridLegacy";
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import SyncIcon from '@mui/icons-material/Sync';
 import LoginIcon from '@mui/icons-material/Login';
@@ -40,17 +40,27 @@ export default function SelectRoundPage() {
           setRondas(listaRondas);
           
         } catch (onlineError) {
-          // 3. 🚀 MODO CONTINGENCIA OFFLINE
-          console.warn("[ROUNDS] Servidor no disponible. Generando ronda de contingencia local...", onlineError.message);
-          
-          // Generamos una ronda por defecto para que la app no se detenga sin red
-          setRondas([
-            {
-              id: 1,
-              round_code: "R-LOCAL",
-              description: "Ronda Única Offline"
-            }
-          ]);
+          // 3. MODO OFFLINE: leer las rondas descargadas en SQLite.
+          console.warn(
+            "[ROUNDS] Servidor no disponible. Leyendo rondas locales...",
+            onlineError.message
+          );
+
+          if (!window.api?.obtenerRounds) {
+            throw new Error(
+              "Modo offline no disponible: falta el puente de Electron."
+            );
+          }
+
+          const rondasLocales = await window.api.obtenerRounds(ecoeId);
+
+          if (!Array.isArray(rondasLocales) || rondasLocales.length === 0) {
+            throw new Error(
+              "No hay rondas descargadas localmente. Configure el portátil con conexión antes de trabajar offline."
+            );
+          }
+
+          setRondas(rondasLocales);
         }
 
       } catch (err) {

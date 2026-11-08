@@ -2,105 +2,152 @@ import React, { useState } from "react";
 import { Paper, Box, Typography, TextField, Button, InputAdornment } from "@mui/material";
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import LockIcon from '@mui/icons-material/Lock';
-
+import bcrypt from "bcryptjs";
 
 import logoImg from "../../../assets/images/logo1.png";
 import { getApiBaseUrl } from "../utils/apiConfig";
 
 export default function Login({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-/*
-{
-  "email": "ecoe@umh.es",
-  "password": "Kui0chee"
-}
-*/
-
-  const [email, setEmail] = useState("ecoe@umh.es");
-  const [password, setPassword] = useState("Kui0chee");
-
-
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  
-  try {
-    console.log("[LOGIN] Intentando autenticación online con FastAPI...");
-
-    // 1. INTENTO ONLINE ORIGINAL
-    const response = await fetch(`${getApiBaseUrl()}/backend/auth/tokens`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: email,
-        password: password
-      })
-    });
-
-    // Si el servidor responde pero da un error de credenciales reales (401, 403, etc.)
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error("[LOGIN] Error en autenticación online:", response.status, errorData);
-      throw new Error("Usuario o contraseña incorrectos en el servidor.");
-    }
-
-    const data = await response.json();
-    
-    if (data.token) {
-      // A) Guardamos el token en el navegador para las llamadas de red mientras dure la sesión
-      sessionStorage.setItem("token_ecoe", data.token);
-
-      // B) 🚀 RESPALDO LOCAL: Guardamos al usuario en SQLite para que pueda entrar mañana sin internet
-      console.log("[LOGIN] Sincronizando usuario en la base de datos SQLite local...");
-      const usuarioLocal = {
-        id: data.user_id || Date.now(), // Asegúrate del campo de tu API (data.user_id, data.id, etc.)
-        email: email,
-        role: data.role || "evaluador",
-        token: data.token
-      };
-      await window.api.guardarUsuarioLocal(usuarioLocal);
-
-      console.log("[LOGIN] ¡Token y perfil local sincronizados!");
-      if (onLogin) onLogin();
-    } else {
-      throw new Error("El servidor no devolvió el parámetro 'token'.");
-    }
-
-  } catch (error) {
-    // 2. 🚀 MODO CONTINGENCIA OFFLINE
-    console.warn("[LOGIN] FastAPI no disponible o error detectado. Iniciando protocolo Offline...", error.message);
-
-    // Si el error fue explícitamente que la clave está mal contra el servidor online, no entramos en offline
-    if (error.message.includes("incorrectos en el servidor")) {
-      alert("No se pudo iniciar sesión: " + error.message);
-      return;
-    }
+  const loginOffline = async (motivo) => {
+    console.warn("[LOGIN OFFLINE] Motivo:", motivo);
 
     try {
-      // Consultamos a la base de datos local de Knex a través de nuestro puente IPC
-      const usuarioLocal = await window.api.obtenerUsuarioLocal(email);
+      const emailLimpio = email.trim().toLowerCase();
+      const usuarioLocal = await window.api.obtenerUsuarioLocal(emailLimpio);
 
-      if (usuarioLocal) {
-        console.log("[LOGIN OFFLINE] Usuario encontrado en SQLite local:", usuarioLocal);
-        
-        // Generamos un token ficticio local para engañar a los PrivateRoute de React Router
-        // y permitir que la app funcione sin internet de manera transparente
-        sessionStorage.setItem("token_ecoe", usuarioLocal.token_temporal || "offline_token_session");
-        
-        alert("⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas.");
-        
-        if (onLogin) onLogin();
-      } else {
-        console.error("[LOGIN OFFLINE] El usuario no existe en la base de datos local.");
-        alert("Error de conexión: El portátil está Offline y este usuario no ha sido sincronizado previamente en este equipo.");
+      if (!usuarioLocal) {
+        alert(
+          "Error de conexión: el portátil está Offline y este usuario no ha sido sincronizado previamente en este equipo."
+        );
+        return;
       }
+
+      if (!usuarioLocal.password_hash) {
+        alert(
+          "Este usuario no tiene credenciales offline en este equipo. Inicie sesión una vez con conexión a internet."
+        );
+        return;
+      }
+
+      const passwordOk = await bcrypt.compare(
+        password,
+        usuarioLocal.password_hash
+      );
+
+      if (!passwordOk) {
+        alert("Contraseña incorrecta.");
+        return;
+      }
+
+      sessionStorage.setItem(
+        "token_ecoe",
+        usuarioLocal.token_temporal || "offline_token_session"
+      );
+      sessionStorage.setItem("user_email", emailLimpio);
+
+      alert(
+        "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
+      );
+
+      if (onLogin) onLogin();
     } catch (dbError) {
       console.error("[LOGIN OFFLINE] Error crítico consultando la DB local:", dbError);
       alert("No se pudo conectar al servidor ni verificar las credenciales locales.");
     }
-  }
-};
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (submitting) return;
+    setSubmitting(true);
+
+    try {
+      console.log("[LOGIN] Intentando autenticación online con FastAPI...");
+
+      const emailLimpio = email.trim().toLowerCase();
+      let response;
+
+      try {
+        response = await fetch(`${getApiBaseUrl()}/backend/auth/tokens`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email: emailLimpio,
+            password: password
+          })
+        });
+      } catch (networkError) {
+        // Sin red: intentamos validar localmente.
+        await loginOffline(networkError.message);
+        return;
+      }
+
+      // Credenciales incorrectas: no permitimos el bypass offline.
+      if (response.status === 401 || response.status === 403) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(
+          "[LOGIN] Error de credenciales:",
+          response.status,
+          errorData
+        );
+        alert("Usuario o contraseña incorrectos en el servidor.");
+        return;
+      }
+
+      if (!response.ok) {
+        // 500/502...: el servidor no está operativo, probamos offline.
+        console.warn(
+          `[LOGIN] Servidor respondió ${response.status}. Probando modo offline...`
+        );
+        await loginOffline(`HTTP ${response.status}`);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (!data.token) {
+        console.warn(
+          "[LOGIN] El servidor no devolvió token. Probando modo offline..."
+        );
+        await loginOffline("Respuesta sin token");
+        return;
+      }
+
+      sessionStorage.setItem("token_ecoe", data.token);
+      sessionStorage.setItem("user_email", emailLimpio);
+
+      // Guardamos un hash de la contraseña para poder validar el login offline.
+      try {
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        await window.api.guardarUsuarioLocal({
+          id: data.user_id || data.id || Date.now(),
+          email: emailLimpio,
+          role: data.role || "evaluador",
+          token: data.token,
+          password_hash: passwordHash
+        });
+
+        console.log("[LOGIN] Token y credenciales offline sincronizados.");
+      } catch (dbError) {
+        console.warn(
+          "[LOGIN] No se pudo guardar el usuario local; el login online continúa:",
+          dbError
+        );
+      }
+
+      if (onLogin) onLogin();
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Box 
@@ -189,6 +236,7 @@ const handleSubmit = async (e) => {
             fullWidth
             variant="contained"
             size="large"
+            disabled={submitting}
             sx={{ 
               backgroundColor: "#1976d2",
               '&:hover': { backgroundColor: "#115293" },
@@ -200,7 +248,7 @@ const handleSubmit = async (e) => {
               boxShadow: "none"
             }}
           >
-            Iniciar Sesión
+            {submitting ? "Iniciando sesión..." : "Iniciar Sesión"}
           </Button>
         </Box>
       </Paper>

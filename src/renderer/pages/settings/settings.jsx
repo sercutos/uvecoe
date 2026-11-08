@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 
 import {
   Box,
-  Grid,
   Typography,
   Card,
   CardContent,
@@ -17,7 +16,9 @@ import {
   Select,
   MenuItem
 } from "@mui/material";
+import Grid from "@mui/material/GridLegacy";
 import { getApiBaseUrl } from "../../utils/apiConfig";
+import { fetchStationData } from "../../utils/stationData";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -51,6 +52,31 @@ export default function Settings() {
       }
     }
     loadServerUrl();
+  }, []);
+
+  // Contador de respuestas pendientes de sincronizar
+  useEffect(() => {
+    let active = true;
+
+    const refreshPending = async () => {
+      try {
+        if (!window.api?.contarPendientes) return;
+        const count = await window.api.contarPendientes();
+        if (active) setPendingCount(Number(count) || 0);
+      } catch (error) {
+        console.warn("[Settings] No se pudo contar pendientes:", error);
+      }
+    };
+
+    refreshPending();
+    const interval = setInterval(refreshPending, 10000);
+    window.addEventListener("uvecoe:pending-changed", refreshPending);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener("uvecoe:pending-changed", refreshPending);
+    };
   }, []);
 
   // 1. Cargar ECOEs disponibles al montar Settings
@@ -136,11 +162,12 @@ export default function Settings() {
     setAlertInfo({ show: false, severity: "info", msg: "" });
 
     try {
-      if (!window.api || !window.api.invoke) {
+      if (!window.api || !window.api.sincronizarRespuestas) {
         throw new Error("API de Electron no disponible");
       }
 
-      const res = await window.api.invoke("db:sincronizar-respuestas-al-servidor");
+      const token = sessionStorage.getItem("token_ecoe");
+      const res = await window.api.sincronizarRespuestas(token);
 
       if (res.success) {
         setAlertInfo({
@@ -159,10 +186,19 @@ export default function Settings() {
       });
     } finally {
       setLoadingExport(false);
+
+      try {
+        const count = await window.api.contarPendientes();
+        setPendingCount(Number(count) || 0);
+      } catch {
+        // La consulta periódica lo actualizará.
+      }
+
+      window.dispatchEvent(new Event("uvecoe:pending-changed"));
     }
   };
 
-  // 📥 DESCARGA COMPLETA (ECOE + estación + preguntas + estudiantes + usuarios)
+  // 📥 DESCARGA COMPLETA (ECOE + estación + planificación + alumnos + usuarios)
   const handleDescargarCompleto = async (e) => {
     e.preventDefault();
     if (!selectedEcoe || !selectedStation) return;
@@ -171,90 +207,48 @@ export default function Settings() {
     setDownloadStatus("⏳ Descargando datos del servidor...");
 
     try {
-      const token = sessionStorage.getItem("token_ecoe");
-      const estacionActiva = stations.find(s => s.id === Number(selectedStation));
-
-      // A) Obtener bloque
-      const resBlocks = await fetch(
-        `${getApiBaseUrl()}/backend/api/v1/blocks?station_id=${selectedStation}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        }
+      const estacionActiva = stations.find(
+        (s) => Number(s.id) === Number(selectedStation)
       );
-      const blocksData = await resBlocks.json();
-      const block = blocksData?.items?.[0];
+
+      const data = await fetchStationData({
+        ecoeId: Number(selectedEcoe),
+        stationId: Number(selectedStation)
+      });
 
       const configLocal = {
         ecoe_id: Number(selectedEcoe),
         station_id: Number(selectedStation),
-        station_name: estacionActiva?.name || `Estación ${selectedStation}`,
-        block_id: block?.id || null
+        station_name:
+          estacionActiva?.name ||
+          data.station?.name ||
+          `Estación ${selectedStation}`,
+        block_id: data.block.id,
+        station_order:
+          data.station?.order ?? estacionActiva?.order ?? null
       };
-      await window.api.guardarConfiguracion(configLocal);
 
-      // B) Descargar preguntas
-      setDownloadStatus("⏳ Descargando rúbrica de la estación...");
-      const resPreguntas = await fetch(
-        `${getApiBaseUrl()}/backend/api/v1/questions?station_id=${selectedStation}&per_page=500`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        }
+      setDownloadStatus(
+        "⏳ Almacenando información en la base de datos local SQLite..."
       );
-      if (!resPreguntas.ok) throw new Error(`Error al descargar preguntas (Status: ${resPreguntas.status})`);
-      const dataPreguntas = await resPreguntas.json();
-      const questions = dataPreguntas.items || dataPreguntas;
 
-      // C) Descargar estudiantes
-      setDownloadStatus("⏳ Descargando lista de estudiantes asignados...");
-      const resAlumnos = await fetch(
-        `${getApiBaseUrl()}/backend/api/v1/students?per_page=500&id_ecoe=${selectedEcoe}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        }
-      );
-      if (!resAlumnos.ok) throw new Error(`Error al descargar estudiantes (Status: ${resAlumnos.status})`);
-      const dataAlumnos = await resAlumnos.json();
-      const students = dataAlumnos.items || dataAlumnos;
-
-      // C.2) Descargar usuarios
-      setDownloadStatus("⏳ Descargando lista de usuarios y evaluadores...");
-      const resUsers = await fetch(
-        `${getApiBaseUrl()}/backend/api/v1/users`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          }
-        }
-      );
-      if (!resUsers.ok) throw new Error(`Error al descargar usuarios (Status: ${resUsers.status})`);
-      const dataUsers = await resUsers.json();
-      const users = dataUsers.items || dataUsers;
-
-      // D) Volcar a SQLite
-      setDownloadStatus("⏳ Almacenando información en la base de datos local SQLite...");
-      await window.api.invoke("db:guardarDatosIniciales", {
+      // Primero los datos y al final la configuración.
+      await window.api.guardarDatosIniciales({
         stationId: configLocal.station_id,
-        id_block: block?.id ?? null,
-        questions,
-        students,
-        users
+        id_block: configLocal.block_id,
+        questions: data.questions,
+        students: data.students,
+        users: data.users,
+        shifts: data.shifts,
+        rounds: data.rounds,
+        planners: data.planners
       });
 
-      setDownloadStatus("✅ ¡Portátil configurado con éxito y listo para trabajar Offline!");
+      await window.api.guardarConfiguracion(configLocal);
+
+      setDownloadStatus(
+        "✅ ¡Portátil configurado con éxito y listo para trabajar Offline!"
+      );
       setAlertInfo({
         show: true,
         severity: "success",
@@ -262,7 +256,9 @@ export default function Settings() {
       });
     } catch (error) {
       console.error("Error en la descarga:", error);
-      setDownloadStatus("❌ Error crítico durante la descarga. Revisa la consola.");
+      setDownloadStatus(
+        `❌ Error crítico durante la descarga: ${error.message}`
+      );
       setAlertInfo({
         show: true,
         severity: "error",
@@ -365,6 +361,10 @@ export default function Settings() {
                 <Typography variant="h6">⬆️ Exportar Evaluaciones (Laptop → Servidor)</Typography>
                 <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
                   Envía el lote masivo (Bulk) de notas almacenadas sin conexión en este equipo hacia la plataforma en la nube.
+                </Typography>
+
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Respuestas pendientes: <strong>{pendingCount}</strong>
                 </Typography>
 
                 <Button 

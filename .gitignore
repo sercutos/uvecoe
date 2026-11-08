@@ -5,6 +5,7 @@
 .cache/
 build/
 dist/
+release/
 node_modules/
 .DS_Store
 .vscode/
@@ -21,3 +22,7 @@ NOTAS.md
 datos.txt
 .env
 data/*
+*.pfx
+*.p12
+*.pvk
+certs/

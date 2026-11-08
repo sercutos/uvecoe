@@ -28,9 +28,10 @@
 | Backend | FastAPI + MySQL (contenedor externo, no forma parte del repo) |
 | Empaquetado | electron-builder (target Windows NSIS) |
 
-La base de datos local **no replica** el modelo completo del backend: solo guarda lo necesario
-para configurar el portátil y evaluar. No existen tablas locales de `shifts`, `rounds`,
-`planners` ni `stations`.
+La base de datos local **no replica** el modelo completo del backend, pero desde el punto 2 sí
+guarda la planificación necesaria para trabajar offline: `shifts`, `rounds` y `planners`.
+No se guarda una tabla local de `stations`; el orden de la estación se persiste en
+`configuracion.station_order`.
 
 ---
 
@@ -53,8 +54,16 @@ npm run start:clean  # equivale a npm run dev:clean
 # Build del renderer -> dist/
 npm run build
 
-# Empaquetado (solo --dir)
+# Build + empaquetado (--dir) -> release/linux-unpacked
 npm run pack
+
+# Instalador Windows NSIS -> release/UVECOE-<version>-setup.exe
+# (requiere Windows o Wine/Docker; en este entorno se compiló en Windows)
+npm run dist:win
+
+# Windows firmado con el certificado interno (recomendado)
+# Lee CSC_LINK/CSC_KEY_PASSWORD y verifica la firma al terminar
+npm run dist:win:signed
 
 # Rebuild del módulo nativo para Electron
 npx electron-rebuild -f -w better-sqlite3
@@ -96,13 +105,14 @@ src/db/
   migrations/               Migraciones timestamped de Knex
 
 src/renderer/
-  index.jsx                 Router + ThemeProvider
+  index.jsx                 Bootstrap (URL) + Router + ThemeProvider
   App.jsx                   Guardián: comprueba configuración y API base
   components/
-    Login.jsx               Formulario y lógica online/offline
+    Login.jsx               Login online/offline con hash bcrypt
     Toolbar.jsx             Navegación, ayuda, acerca de, logout
     Logo/Logo.jsx           Logo (actualmente importado pero no usado en Login)
   pages/
+    setup/FirstRunSetup.jsx Asistente de primer arranque: URL + admin
     login/                  Envoltorio de Login
     admin/AdminConfig.jsx   Configuración inicial del portátil
     dates/                  Selección de fecha (turnos -> días)
@@ -116,10 +126,16 @@ src/renderer/
   utils/
     apiConfig.js            URL base y helpers de paths
     api.js                  fetchWithAuth (Bearer desde sessionStorage)
+    stationData.js          Descarga completa y paginada de la estación
 
 assets/                     splash.html, login.html (sin uso), imágenes
-data/                       uvecoe.db (runtime) y openecoe_lite.db (legacy)
-dist/                       Build de Vite (actualmente desactualizado)
+data/                       uvecoe.db (runtime; openecoe_lite.db fue eliminada)
+dist/                       Build de Vite (regenerado el 2026-11-07)
+scripts/
+  build-win-signed.ps1      Build Windows + firma + verificación
+  install-code-signing-cert.ps1  Confianza en LocalMachine (12 portátiles)
+  uninstall-clean.ps1       Desinstalación limpia + backup de DB
+  desinstalar-limpio.bat    Lanzador de la desinstalación limpia
 ```
 
 ### Flujo de pantallas
@@ -127,7 +143,11 @@ dist/                       Build de Vite (actualmente desactualizado)
 `/login` → `/` (fecha) → `/rounds` → `/turns` → `/evaluation`
 Rutas auxiliares: `/settings`, `/students`, `/questions`.
 
+Si se entra directamente en `/evaluation` sin la selección completa (por ejemplo desde el icono
+"Evaluación Activa" del Toolbar), se redirige al primer paso que falte: `/`, `/rounds` o `/turns`.
+
 La selección de fecha/ronda/turno **solo vive en `sessionStorage`**; se pierde al reiniciar la app.
+Las pantallas de fecha/ronda/turno se reconstruyen desde SQLite cuando no hay red.
 
 Claves de `sessionStorage` usadas:
 
@@ -156,12 +176,15 @@ Ruta de la DB:
 
 | Tabla | Campos relevantes | Notas |
 |---|---|---|
-| `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id` | Una sola fila. `block_id` es `NOT NULL` |
-| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `token_temporal` | Copia de usuarios del servidor para login offline |
-| `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order` | Se descargan por estación/ECOE |
-| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema` | `question_schema` se guarda como texto JSON |
-| `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `evaluado_en` | FKs con `ON DELETE CASCADE`; **sin índice único** |
+| `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id`, `station_order` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
+| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `token_temporal`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online |
+| `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
+| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `max_points`, `active` | `question_schema` incluye `type` y `options[].points`; `max_points` se rellena desde la rúbrica publicada; `active=false` si la pregunta ya no se publica |
+| `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert` |
 | `settings` | `key` (PK), `value` | `api_base_url` |
+| `shifts` | `id`, `id_ecoe`, `shift_code`, `time_start` | Turnos descargados para seleccionar fecha/turno offline |
+| `rounds` | `id`, `id_ecoe`, `round_code`, `description` | Rondas descargadas |
+| `planners` | `id`, `id_shift`, `id_round` | Une turno + ronda; agrupa los 12 alumnos del turno |
 
 Todos los identificadores de negocio (`id_student`, `id_question`, etc.) son **IDs del servidor**.
 No se deben inventar IDs locales para sincronizar.
@@ -186,6 +209,12 @@ Definidos en `main.js` y expuestos en `preload.js`:
 - `db:obtener-respuestas-alumno`
 - `db:guardar-resultado`
 - `db:sincronizar-respuestas-al-servidor`
+- `db:contar-pendientes`
+- `db:obtener-shifts`
+- `db:obtener-rounds`
+- `db:obtener-planner`
+- `db:obtener-estudiantes-planner`
+- `db:asegurar-referencias`
 
 El preload expone métodos explícitos **y** un `invoke(channel, data)` genérico. No añadir
 nuevos canales genéricos; preferir métodos explícitos y validar el payload en `main`.
@@ -206,7 +235,9 @@ El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWi
 
 | Endpoint | Forma de respuesta | Notas críticas |
 |---|---|---|
+| `GET /backend/status` | `{ status: "ok" }` | Health check usado por el asistente inicial |
 | `POST /backend/auth/tokens` | `{ token, expiration }` | No devuelve `user_id` ni `role`; el código los espera |
+| `GET /users/me` | `UserRead` | Requiere Bearer; el asistente exige `is_superadmin` o rol `administrator` |
 | `GET /ecoes` | Array | Requiere Bearer |
 | `GET /stations?ecoe_id=` | `{ items, total, page, per_page }` | Campo `id_parent_station` (no `parent_station`) |
 | `GET /shifts?id_ecoe=` | `{ items, ... }` | `time_start` es string ISO, no `{ $date }`; el código lo tolera |
@@ -218,20 +249,19 @@ El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWi
 | `GET /users` | Array | Requiere Bearer |
 | `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | Hoy no exige token en el servidor |
 
-### Bug de contrato más importante
+### Descarga y agrupación de alumnos
 
-`AdminConfig.jsx:155-156` y `settings.jsx:217-218` llaman a:
-
-```
-/students?per_page=500&id_ecoe=<id>
-```
+**Implementado:** la descarga usa `ecoe_id` (no `id_ecoe`) y guarda **los 276 alumnos del ECOE**
+con su `id_planner` y `planner_order`.
 
 La API **ignora** `id_ecoe`. Verificado en vivo:
 
-- `id_ecoe=999` → devuelve 276 alumnos.
-- `ecoe_id=999` → devuelve 0.
+- `id_ecoe=999` → devuelve 276 alumnos (filtro ignorado).
+- `ecoe_id=999` → devuelve 0 (filtro aplicado).
 
-Además, para el modo offline hay que filtrar por `planner_id` (turno + ronda), no solo por ECOE.
+El filtro de 12 alumnos **no se hace al descargar**, sino al evaluar: se resuelve el planner del
+turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después con el
+`station_order`.
 
 ### Payload de sincronización
 
@@ -257,18 +287,41 @@ Además, para el modo offline hay que filtrar por `planner_id` (turno + ronda), 
 1. **Un portátil = un ECOE + una estación + un bloque.** La configuración se guarda en
    `configuracion` y bloquea la pantalla de administración.
 2. **Autoguardado inmediato:** cada cambio de switch debe persistirse en `resultados`.
-3. **Unicidad lógica:** una fila por `(id_student, id_question, id_station)`. Actualmente
-   no hay restricción en la DB; usar `upsert` al implementar mejoras.
-4. **Nunca borrar resultados al re-descargar.** Las FKs con `CASCADE` hacen que borrar
-   `questions` o `students` elimine las respuestas asociadas. Usar `upsert` o conservar históricos.
-5. **Puntos reales:** `points` debe respetar `max_points` y `question_schema.options`. Hoy se
-   hardcodea `1` y `{ id_option: 1 }`.
-6. **Configuración atómica:** descargar y validar todo antes de guardar `configuracion`, y hacerlo
-   en una transacción.
+3. **Unicidad lógica:** una fila por `(id_student, id_question, id_station)`. La DB tiene un
+   índice único y `db:guardar-resultado` usa `upsert`; no volver al patrón `select` + `insert`.
+4. **Nunca borrar resultados al re-descargar.** La descarga hace `upsert` de `questions` y
+   `students` y no ejecuta `del()` sobre ellas. Las FKs con `CASCADE` siguen en el esquema: no
+   volver a introducir borrados masivos.
+5. **Puntos reales:** `points` y `answer_schema` se calculan desde `max_points` y
+   `question_schema.options` publicados por el servidor. No hardcodear `1` ni `id_option: 1`.
+   Una respuesta con puntos `> 0` (por ejemplo `0.5`) se muestra como switch activo.
+6. **Configuración atómica:** descargar y validar todo (bloque, preguntas, 276 alumnos,
+   planificación y usuarios) antes de guardar `configuracion`, y hacerlo en una transacción.
 7. **Los IDs locales son IDs del servidor.** No generar IDs ficticios para resultados que luego
    se sincronizan.
-8. **Offline real:** la app debe poder evaluar tras un reinicio sin red. Para ello necesita
-   persistir turnos/rondas/planners y la relación alumno↔planner, no solo `sessionStorage`.
+8. **Offline real:** la app debe poder evaluar tras un reinicio sin red. Ya persiste
+   turnos/rondas/planners y el orden de la estación; la selección de fecha/turno se lee de SQLite
+   si no hay red.
+9. **Todos los alumnos, un planner por turno:** se descargan los 276 del ECOE, pero cada turno
+   evalúa solo los 12 de su `planner`. Nunca caer a evaluar la tabla `students` completa.
+10. **Rotación:** los alumnos se ordenan por `planner_order` (1..12) y la estación `k` empieza
+    por el alumno `k`, rotando hacia `k-1`:
+    `k, k-1, …, 1, 12, …, k+1`. Implementado en `reorderStudentsForStation`.
+11. **Login online/offline:** el primer login de cada usuario debe hacerse con red para guardar el
+    `password_hash` bcrypt. Sin hash, el login offline se rechaza. Un 401/403 del servidor nunca
+    cae a offline; solo se usa offline si falla la red o el servidor no está operativo.
+12. **Logout:** debe revocar el token (best effort), limpiar `token_ecoe`, `user_email` y toda la
+    selección de fecha/ronda/turno, y conservar `api_base_url` para el siguiente Login.
+13. **Sincronización:** el Toolbar muestra `N pendientes` / `Al día` y permite sincronizar al
+    pulsar. La evaluación intenta auto-sync al entrar, cada 5 minutos y al pasar de alumno; es
+    silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan.
+14. **Primer arranque:** una DB nueva (`setup_completed=false`) muestra el asistente antes del
+    Login. Exige probar `/backend/status`, autenticar un admin y validar `/users/me`
+    (`is_superadmin` o rol `administrator`). Si falla, no se puede continuar. Las DBs ya
+    configuradas (`setup_completed=true`) se saltan el asistente.
+14. **Soft-delete:** las preguntas/alumnos que ya no vienen en la descarga se marcan
+    `active=false`, nunca se borran si tienen resultados. La evaluación y las vistas filtran
+    `active=true`. Si el servidor los vuelve a publicar, el upsert los reactiva.
 
 ---
 
@@ -287,72 +340,79 @@ Además, para el modo offline hay que filtrar por `planner_id` (turno + ronda), 
   operaciones que puedan ejecutarse en ráfaga.
 - **IPC:** añadir el método explícito en `preload.js` y su handler `db:*` en `main.js`.
 
-### Estado de MUI Grid
+### MUI Grid
 
-El proyecto usa `<Grid item xs={12} sm={6}>`, API de **GridLegacy**. En MUI 7 `Grid` espera:
+El proyecto usa deliberadamente la API antigua `item`/`xs`/`sm` y por eso importa:
 
 ```jsx
-<Grid container spacing={3}>
-  <Grid size={{ xs: 12, sm: 6 }}>...</Grid>
-</Grid>
+import Grid from "@mui/material/GridLegacy";
 ```
 
-Si se mantiene la API antigua, importar `GridLegacy as Grid`. No mezclar ambas.
+No importar `Grid` desde `@mui/material` en estas pantallas: es el Grid nuevo de MUI 7, ignora
+`item`/`xs`/`sm` y rompe el layout (fechas/turnos cortados). No mezclar ambas APIs.
 
 ---
 
 ## 9. Problemas conocidos y zonas peligrosas
 
-### P0 — no tocar sin cuidado / corregir antes de un ECOE real
+### Resuelto en el punto 2 (2026-11-07)
 
-1. **Descarga de alumnos sin filtrar** (`AdminConfig.jsx:155-156`, `settings.jsx:217-218`):
-   `id_ecoe` ignorado por la API. Guarda 276 alumnos en lugar de los 12 del planner.
-2. **Borrado en cascada de resultados** (`queries.js:14-40`, `main.js:212-214`): re-descargar
-   configuración elimina respuestas ya evaluadas.
-3. **FK silenciosa al guardar respuestas** (`evaluation.jsx:308-315`): si el alumno o la pregunta
-   online no existe en SQLite, el `INSERT` falla y solo se registra en consola.
-4. **Configuración prematura y no transaccional** (`AdminConfig.jsx:129-135`,
-   `queries.js:65-74`): se guarda antes de descargar datos; `block_id` es `NOT NULL` pero puede
-   llegar `null`.
-5. **Modo offline incompleto** (`evaluation.jsx:87-109`): no hay tablas de planners/turnos/rondas;
-   se evalúa toda la tabla `students`.
-6. **URL del servidor no aplicada en Login** (`App.jsx:9-21`, `index.jsx:35`): `initApiConfig()`
-   solo corre en rutas protegidas; tras reiniciar, Login usa `localhost:8000`.
-7. **Autenticación local débil** (`Login.jsx:19-20`, `80-101`; `Toolbar.jsx:140-142`;
-   `index.jsx:24-27`): credenciales por defecto, login offline sin contraseña, logout que no
-   limpia el token.
-8. **Datos personales en Git:** `data/openecoe_lite.db` contiene alumnos, respuestas y usuarios.
-   No añadir más DBs al repo y valorar limpiar el historial.
-9. **`dist/` obsoleto:** el build actual es anterior al código fuente. Regenerarlo antes de
-   empaquetar o de ejecutar sin `NODE_ENV=development`.
+- Descarga de los 276 alumnos del ECOE con `ecoe_id` e `id_planner` correcto.
+- Tablas locales `shifts`, `rounds`, `planners` y `configuracion.station_order`.
+- Evaluación offline que resuelve el planner, carga sus 12 alumnos y rota por estación.
+- `upsert` de alumnos/preguntas y configuración al final: re-descargar ya no borra resultados.
+- `db:asegurar-referencias` hace upsert de los alumnos/preguntas online antes de evaluar.
+- Índice único en `resultados` y `upsert` por `(id_student, id_question, id_station)`.
+- Si el autoguardado falla, el switch se revierte y se muestra un `Alert` al evaluador.
+
+### Resuelto en el login (2026-11-07)
+
+- `Bootstrap` en `index.jsx` inicializa `api_base_url` antes de renderizar Login.
+- Credenciales por defecto eliminadas del código.
+- Login offline verificado con bcrypt contra `users.password_hash`.
+- 401/403 no permiten bypass offline; solo red caída o servidor no operativo.
+- Logout revoca el token, limpia la sesión y muestra el usuario real en el Toolbar.
+
+### P0 — reglas permanentes
+
+1. **Datos personales:** no volver a trackear `data/*.db`; contienen alumnos, respuestas y usuarios.
+   El histórico ya se limpió.
+2. **`dist/`:** se regeneró el 2026-11-07. Volver a ejecutar `npm run build` antes de empaquetar
+   o de ejecutar sin `NODE_ENV=development`, ya que `dist/` está ignorado por Git.
+
+No queda ningún P0 funcional abierto.
+
+### Resuelto en P1 (2026-11-07)
+
+- `max_points` y `options[].points` se leen del servidor; migración corrige resultados antiguos.
+- `AnswerBulkItem.points` del backend pasa de `int` a `float` (archivo externo
+  `/home/scubero/openECOE-FASTAPI/backend/app/schemas/answer.py`).
+- Sincronización con Bearer token, timeout de 30 s y validación de `inserted_or_updated`.
+- Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
+  (al entrar, cada 5 min y al pasar de alumno). Bloqueo para evitar sync simultáneas.
+- Soft-delete de preguntas/alumnos obsoletos con `active`; resultados históricos conservados.
+- Asistente de primer arranque con URL, prueba de conexión y validación de administrador;
+  guarda `api_base_url`, hash del admin y `setup_completed=true`.
+- Empaquetado: salida en `release/`, allowlist de `files`, `asarUnpack` de `better-sqlite3`,
+  `postinstall` y ruta de DB unificada (`userData` en producción).
+- Firma Authenticode del instalador y del `.exe` con certificado interno; timestamp RFC3161.
+  El certificado debe confiarse en cada portátil (Root + TrustedPublisher).
+- `init.js` se mantiene como migración no-op `async` por compatibilidad con DBs antiguas.
 
 ### P1 — robustez y calidad
 
-- Sin índice único en `resultados`; riesgo de duplicados por clics rápidos
-  (`main.js:316-356`).
-- `points` y `answer_schema` hardcodeados (`evaluation.jsx:291-305`).
-- Fallback a SQLite solo si una petición lanza excepción; una lista vacía no hace fallback
-  (`evaluation.jsx:115-117`).
-- Sincronización sin token, sin timeout y marcando todo como sincronizado
-  (`main.js:360-431`).
-- `id_planner` mal mapeado en `queries.js:36` (la API devuelve `id_planner`, no `planner.$ref`).
-- `users.truncate()` en `queries.js:43` borra los usuarios locales, incluido el logueado.
-- Ruta de DB inconsistente al empaquetar (`main.js` vs `knex.js`).
-- Empaquetado sin `asarUnpack` para `better-sqlite3` ni rebuild automático.
-- Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx:212-223`) e IDs fijos
-  (`QuestionPage.jsx:56-58`).
-- Cronómetro que vuelve a `07:00` al llegar a cero (`evaluation.jsx:346-366`).
-- `Toolbar.jsx:134-136` muestra siempre `ecoe@umh.es`.
-- Settings muestra estado verde aunque no haya conexión (`settings.jsx:439-442`).
-- `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html`, `LogoOscuro` y
-  `bcryptjs` no se usan.
+- Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx`) e IDs fijos
+  (`QuestionPage.jsx`).
+- Cronómetro que vuelve a `07:00` al llegar a cero (`evaluation.jsx`).
+- Settings muestra estado verde aunque no haya conexión.
+- `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html` y `LogoOscuro`
+  no se usan.
 - Coexisten `package-lock.json` y `yarn.lock`.
-- `src/db/migrations/init.js` no tiene timestamp.
-- `fetch` sin timeout ni abort en renderer y en `main.js`.
+- `src/db/migrations/init.js` no tiene timestamp; no borrarlo (ya está registrado en DBs antiguas).
+- `fetch` sin timeout ni abort en el renderer.
 
 ### P2 — mantenimiento
 
-- Duplicación de la lógica de descarga entre `AdminConfig.jsx` y `settings.jsx`.
 - Falta de tests, lint y formato.
 - Falta de validación de payloads IPC.
 - `webSecurity: false` y `invoke` genérico en preload.
@@ -424,21 +484,44 @@ Checklist funcional:
 
 - Backend accesible en `http://localhost:8000` con OpenAPI 1.0.0.
 - ECOE de prueba: `ECOE1` (id 1), estaciones 13-24, turnos T1-T23, ronda R1 (id 11).
-- `data/uvecoe.db`: `settings` con `api_base_url = http://localhost:8000`, `configuracion` vacía,
-  0 alumnos, 0 preguntas y 0 resultados. La app arrancará en el panel de administración.
-- `dist/` contiene un build antiguo; no usar para producción sin regenerarlo.
-- No hay suite de tests ni linter configurados.
+- `data/uvecoe.db`: `settings` con `api_base_url = http://localhost:8000`, configuración de la
+  Estación 1 (`station_order = 1`), 276 alumnos activos, 30 preguntas activas con
+  `max_points` (1 o 0.5), 13 usuarios (0 con `password_hash` hasta el primer login online),
+  23 turnos, 1 ronda, 23 planners y 5 resultados corregidos (0.5 donde corresponde).
+  Índices `resultados_unique_student_question_station`, `resultados_sincronizado_idx`,
+  `questions_active_station_idx` y `students_active_planner_idx`.
+- `data/openecoe_lite.db` fue eliminada: era legacy y no la usaba el código.
+- `dist/` se regeneró y `release/` (Linux y Windows) está ignorado por Git.
+- Instalador Windows generado, firmado y probado: `release/UVECOE-1.0.0-setup.exe`, instalación
+  per-user, acceso directo y DB en `%APPDATA%\uvecoe\uvecoe.db`. Incluye HashRouter, GridLegacy,
+  contador de pendientes, auto-sync, soft-delete y asistente de primer arranque.
+- Certificado interno `UVECOE - Universitat de Valencia` (thumbprint
+  `B09EC007BDCC8A7C4E9968973C7F3EE7E852C83D`, válido hasta 2031). Firmante y timestamp
+  verificados con `Get-AuthenticodeSignature` (`Status: Valid`).
+- Para los 12 portátiles hay que desplegar el `.cer` en `LocalMachine\Root` y
+  `LocalMachine\TrustedPublisher` con `scripts/install-code-signing-cert.ps1` (admin) o GPO/Intune.
+- Desinstalación limpia: `scripts/uninstall-clean.ps1` (backup de DB, borra
+  `%APPDATA%\uvecoe`, opcional `-RemoveCertificate`). El desinstalador NSIS solo
+  no borra la DB por seguridad.
+- `settings.setup_completed` = `true` en DBs configuradas; una DB nueva arranca en el asistente.
+- La app empaquetada usa `HashRouter` (file://); en desarrollo se mantiene `BrowserRouter`.
+- La DB empaquetada en Linux se crea en `~/.config/uvecoe/uvecoe.db` (userData).
+- Flujo E2E verificado: online/offline, Estación 1 (orden 1) y Estación 2 (orden 2), login
+  online/offline, FK/upsert, puntos 0.5, sync con token y rechazo de lote parcial.
+- Soft-delete verificado: quitar una pregunta/alumno de la descarga los deja `active=false`,
+  conserva sus resultados y los reactiva si vuelven a publicarse.
+- No hay suite de tests automatizada ni linter configurados.
 
 ---
 
 ## 13. Deuda técnica priorizada
 
-**P0:** filtrar alumnos por planner, evitar borrado en cascada, guardar configuración de forma
-atómica, validar FKs antes de guardar, persistir turnos/rondas/planners para offline, cargar la
-URL antes del Login, limpiar sesión y credenciales, sacar DBs del repo, regenerar `dist/`.
+**P0:** no queda deuda funcional; mantener las reglas de datos personales y de `dist/`.
 
-**P1:** índice único + upsert en `resultados`, respetar `max_points`, fallback offline ante listas
-vacías, token/timeout en sync, corregir `id_planner`, no truncar usuarios, unificar ruta de DB,
-configurar empaquetado de `better-sqlite3`, eliminar código de prueba, arreglar Grid/cronómetro.
+**P1:** eliminar código de prueba, arreglar el cronómetro, unificar el gestor de paquetes y añadir
+tests/lint.
+
+**P2:** firma comercial OV/EV o Azure Trusted Signing si se distribuye fuera de la UV; el
+certificado interno actual solo genera confianza en equipos donde se despliegue el `.cer`.
 
 **P2:** refactor de descargas duplicadas, tests, lint, validación IPC, `safeStorage`, CSP.
