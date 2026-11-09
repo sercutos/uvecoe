@@ -31,6 +31,12 @@ async function fetchPaginated(path) {
   return todos;
 }
 
+// Respuestas ya guardadas en el servidor para una estación.
+async function fetchAnswers(stationId) {
+  const data = await fetchWithAuth(`/answers/station/${stationId}`);
+  return Array.isArray(data) ? data : data.items || [];
+}
+
 // Las preguntas devuelven un array plano, pero aceptan page/per_page.
 async function fetchQuestions(stationId) {
   const todas = [];
@@ -53,7 +59,8 @@ async function fetchQuestions(stationId) {
 /**
  * Descarga todo lo necesario para configurar un portátil:
  * bloque, preguntas de la estación, los 276 alumnos del ECOE,
- * usuarios y la planificación completa (turnos, rondas y planners).
+ * usuarios, la planificación completa (turnos, rondas y planners)
+ * y las respuestas ya guardadas en el servidor para esa estación.
  */
 export async function fetchStationData({ ecoeId, stationId }) {
   const [
@@ -64,7 +71,8 @@ export async function fetchStationData({ ecoeId, stationId }) {
     shifts,
     roundsData,
     plannersData,
-    stations
+    stations,
+    answers
   ] = await Promise.all([
     fetchWithAuth(`/blocks?station_id=${stationId}&per_page=100`),
     fetchQuestions(stationId),
@@ -73,7 +81,16 @@ export async function fetchStationData({ ecoeId, stationId }) {
     fetchPaginated(`/shifts?id_ecoe=${ecoeId}`),
     fetchWithAuth(`/rounds?ecoe_id=${ecoeId}`),
     fetchWithAuth(`/planners?ecoe_id=${ecoeId}`),
-    fetchPaginated(`/stations?ecoe_id=${ecoeId}`)
+    fetchPaginated(`/stations?ecoe_id=${ecoeId}`),
+    fetchAnswers(stationId).catch((error) => {
+      // No bloquear la configuración del portátil si el endpoint de respuestas
+      // falla en un servidor antiguo o no hay permisos.
+      console.warn(
+        "⚠️ No se pudieron descargar las respuestas del servidor:",
+        error
+      );
+      return [];
+    })
   ]);
 
   const block = (blocksData.items || blocksData)[0];
@@ -102,6 +119,7 @@ export async function fetchStationData({ ecoeId, stationId }) {
     shifts,
     rounds,
     planners,
-    station
+    station,
+    answers
   };
 }

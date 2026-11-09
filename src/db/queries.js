@@ -67,7 +67,8 @@ const queries = {
     users,
     shifts,
     rounds,
-    planners
+    planners,
+    answers
   }) => {
     return db.transaction(async (trx) => {
       // 1. Planificación: no tiene FKs desde resultados, se puede reemplazar.
@@ -142,9 +143,93 @@ const queries = {
           .update({ active: false });
       }
 
-      // 4. Usuarios: upsert preservando el token local si la API no lo envía.
+      // 4. Respuestas ya existentes en el servidor.
+      // Se importan como sincronizadas, pero nunca se sobrescribe una respuesta
+      // local pendiente de subir (sincronizado = false).
+      const station = toNumber(stationId);
+      if (station !== null && Array.isArray(answers) && answers.length > 0) {
+        const idsStudents = new Set(
+          (students || [])
+            .map((student) => Number(student.id))
+            .filter(Number.isFinite)
+        );
+        const idsQuestions = new Set(
+          (questions || [])
+            .map((question) => Number(question.id))
+            .filter(Number.isFinite)
+        );
+
+        const porClave = new Map();
+
+        for (const answer of answers) {
+          const idStudent = Number(answer.id_student);
+          const idQuestion = Number(answer.id_question);
+          const idStation = Number(answer.id_station ?? station);
+
+          if (
+            !Number.isFinite(idStudent) ||
+            !Number.isFinite(idQuestion) ||
+            !Number.isFinite(idStation)
+          ) {
+            continue;
+          }
+
+          // Solo respuestas de esta estación y con FKs locales existentes.
+          if (idStation !== station) continue;
+          if (idsStudents.size > 0 && !idsStudents.has(idStudent)) continue;
+          if (idsQuestions.size > 0 && !idsQuestions.has(idQuestion)) continue;
+
+          const answerSchema =
+            typeof answer.answer_schema === "string"
+              ? answer.answer_schema
+              : JSON.stringify(answer.answer_schema || {});
+
+          porClave.set(`${idStudent}:${idQuestion}:${idStation}`, {
+            id_student: idStudent,
+            id_question: idQuestion,
+            id_station: idStation,
+            points: Number.isFinite(Number(answer.points))
+              ? Number(answer.points)
+              : 0,
+            answer_schema: answerSchema,
+            sincronizado: true
+          });
+        }
+
+        if (porClave.size > 0) {
+          const pendientes = await trx("resultados")
+            .where({ id_station: station })
+            .where({ sincronizado: false })
+            .select("id_student", "id_question");
+
+          const clavesPendientes = new Set(
+            pendientes.map(
+              (row) => `${row.id_student}:${row.id_question}:${station}`
+            )
+          );
+
+          const filas = [...porClave.entries()]
+            .filter(([clave]) => !clavesPendientes.has(clave))
+            .map(([, fila]) => fila);
+
+          // Insert por lotes para no superar el límite de parámetros de SQLite.
+          for (let i = 0; i < filas.length; i += 200) {
+            await trx("resultados")
+              .insert(filas.slice(i, i + 200))
+              .onConflict(["id_student", "id_question", "id_station"])
+              .merge(["points", "answer_schema", "sincronizado"]);
+          }
+        }
+      }
+
+      // 5. Usuarios: el email es la identidad estable.
+      // El id del servidor puede cambiar entre ECOEs (o al recrear la BD del
+      // servidor), así que no se usa como clave: solo se actualiza el valor.
       if (Array.isArray(users) && users.length > 0) {
         for (const u of users) {
+          const email = String(u.email || "").trim().toLowerCase();
+          if (!email) continue;
+
           let rolDefinitivo = "evaluador";
           if (Array.isArray(u.roles) && u.roles.length > 0) {
             rolDefinitivo = String(u.roles[0]);
@@ -156,7 +241,7 @@ const queries = {
 
           const usuario = {
             usuario_id_server: u.id,
-            email: u.email,
+            email,
             role: rolDefinitivo
           };
 
@@ -165,24 +250,13 @@ const queries = {
           }
 
           const existentePorEmail = await trx("users")
-            .where({ email: u.email })
+            .whereRaw("LOWER(email) = ?", [email])
             .first();
 
           if (existentePorEmail) {
             await trx("users")
               .where({ id: existentePorEmail.id })
               .update(usuario);
-            continue;
-          }
-
-          const existentePorId = await trx("users")
-            .where({ usuario_id_server: u.id })
-            .first();
-
-          if (existentePorId) {
-            await trx("users")
-              .where({ id: existentePorId.id })
-              .update({ ...usuario, email: u.email });
           } else {
             await trx("users").insert(usuario);
           }
@@ -236,8 +310,8 @@ const queries = {
   // --- CONSULTAS DE USUARIOS ---
   guardarUsuarioLocal: async (usuario) => {
     const fila = {
-      usuario_id_server: usuario.id,
-      email: usuario.email,
+      usuario_id_server: usuario.id ?? Date.now(),
+      email: String(usuario.email || "").trim().toLowerCase(),
       role: usuario.role
     };
 
@@ -245,10 +319,8 @@ const queries = {
     if (token) fila.token_temporal = token;
     if (usuario.password_hash) fila.password_hash = usuario.password_hash;
 
-    return db("users")
-      .insert(fila)
-      .onConflict("usuario_id_server")
-      .merge();
+    // La identidad local es el email; usuario_id_server puede cambiar.
+    return db("users").insert(fila).onConflict("email").merge();
   },
 
   obtenerUsuarioPorEmail: async (email) => {

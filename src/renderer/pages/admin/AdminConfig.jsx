@@ -112,7 +112,7 @@ export default function AdminConfig({ onConfigSuccess }) {
       );
 
       setStatusMessage(
-        "⏳ Descargando bloque, rúbrica, alumnos y planificación..."
+        "⏳ Descargando bloque, rúbrica, alumnos, planificación y respuestas..."
       );
 
       const data = await fetchStationData({
@@ -146,7 +146,8 @@ export default function AdminConfig({ onConfigSuccess }) {
         users: data.users,
         shifts: data.shifts,
         rounds: data.rounds,
-        planners: data.planners
+        planners: data.planners,
+        answers: data.answers
       });
 
       await window.api.guardarConfiguracion(configLocal);

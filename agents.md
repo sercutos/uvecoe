@@ -248,6 +248,7 @@ El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWi
 | `GET /students?ecoe_id=&planner_id=` | `{ items, total, ... }` | **El parámetro es `ecoe_id`, NO `id_ecoe`** |
 | `GET /users` | Array | Requiere Bearer |
 | `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | Hoy no exige token en el servidor |
+| `GET /answers/station/{station_id}` | Array de `AnswerRead` | Se descarga al configurar/actualizar el portátil y se importa en `resultados` |
 
 ### Descarga y agrupación de alumnos
 
@@ -291,7 +292,9 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
    índice único y `db:guardar-resultado` usa `upsert`; no volver al patrón `select` + `insert`.
 4. **Nunca borrar resultados al re-descargar.** La descarga hace `upsert` de `questions` y
    `students` y no ejecuta `del()` sobre ellas. Las FKs con `CASCADE` siguen en el esquema: no
-   volver a introducir borrados masivos.
+   volver a introducir borrados masivos. La descarga también importa las respuestas del servidor
+   (`GET /answers/station/{station_id}`) como `sincronizado = true`, pero **no pisa** las respuestas
+   locales con `sincronizado = false` (pendientes de subir).
 5. **Puntos reales:** `points` y `answer_schema` se calculan desde `max_points` y
    `question_schema.options` publicados por el servidor. No hardcodear `1` ni `id_option: 1`.
    Una respuesta con puntos `> 0` (por ejemplo `0.5`) se muestra como switch activo.

@@ -241,7 +241,8 @@ export default function Settings() {
         users: data.users,
         shifts: data.shifts,
         rounds: data.rounds,
-        planners: data.planners
+        planners: data.planners,
+        answers: data.answers
       });
 
       await window.api.guardarConfiguracion(configLocal);
