@@ -22,6 +22,9 @@ NOTAS.md
 datos.txt
 .env
 data/*
+*.db
+*.sqlite
+*.sqlite3
 *.pfx
 *.p12
 *.pvk
