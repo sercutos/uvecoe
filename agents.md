@@ -225,8 +225,8 @@ Definidos en `main.js` y expuestos en `preload.js`:
 - `db:obtener-estudiantes-planner`
 - `db:asegurar-referencias`
 
-El preload expone métodos explícitos **y** un `invoke(channel, data)` genérico. No añadir
-nuevos canales genéricos; preferir métodos explícitos y validar el payload en `main`.
+El preload expone **solo métodos explícitos**; no hay `invoke(channel, data)` genérico. Añadir
+un método por canal y validar el payload en `main`.
 
 ---
 
@@ -242,6 +242,10 @@ Base:
 El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWithAuth`).
 La sincronización también envía el token; el renderer no llama a `bulk-sync` sin una sesión de
 servidor válida.
+
+Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígenes de la app:
+`http://localhost:5173`, `http://127.0.0.1:5173` (desarrollo) y `null` (app empaquetada con
+`file://`).
 
 | Endpoint | Forma de respuesta | Notas críticas |
 |---|---|---|
@@ -442,7 +446,6 @@ No queda ningún P0 funcional abierto.
 
 - Faltan tests de integración, lint y formato; los tests actuales cubren rotación y puntos.
 - Falta de validación de payloads IPC.
-- `webSecurity: false` y `invoke` genérico en preload.
 - Tokens en claro; usar `safeStorage` de Electron.
 
 ---
@@ -499,9 +502,12 @@ Checklist funcional:
 
 - **No commitear** `data/*.db`, `.env`, tokens, contraseñas ni capturas con datos personales.
 - No introducir credenciales por defecto en el código.
-- Mantener `contextIsolation: true`; no habilitar `nodeIntegration`.
-- Evitar `webSecurity: false`; si se necesita comunicación HTTP, resolverlo con CORS o IPC.
-- No exponer canales IPC arbitrarios desde el preload.
+- Mantener `contextIsolation: true`; no habilitar `nodeIntegration` ni `webSecurity: false`.
+- La ventana solo navega a la app; `will-navigate`, `will-redirect` y las ventanas nuevas se
+  bloquean en `main.js`.
+- No exponer un `invoke` genérico desde el preload.
+- El backend debe permitir en `CORS_ORIGINS` los orígenes de la app: `http://localhost:5173`,
+  `http://127.0.0.1:5173` en desarrollo y `null` para la app empaquetada con `file://`.
 - No loguear tokens ni datos personales.
 - Tratar las respuestas y los DNIs como datos sensibles (GDPR).
 

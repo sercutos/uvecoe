@@ -1,9 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
-  // 🚀 El canal genérico (comodín para ahorrar código en preload)
-  invoke: (channel, data) => ipcRenderer.invoke(channel, data),
-
   // Funciones explícitas de la base de datos para autocompletado en React
   obtenerConfiguracion: () => ipcRenderer.invoke("db:obtenerConfiguracion"),
   guardarConfiguracion: (config) => ipcRenderer.invoke("db:guardarConfiguracion", config),
@@ -14,6 +11,7 @@ contextBridge.exposeInMainWorld("api", {
   obtenerEstudiantesLocales: () => ipcRenderer.invoke('db:obtener-estudiantes'),
   getStudents: () => ipcRenderer.invoke("db:getStudents"),
   obtenerPreguntasLocales: (params) => ipcRenderer.invoke('db:obtener-preguntas', params),
+  obtenerRespuestasAlumno: (params) => ipcRenderer.invoke('db:obtener-respuestas-alumno', params),
   guardarResultadoLocal: (datos) => ipcRenderer.invoke('db:guardar-resultado', datos),
   sincronizarRespuestas: (token) => ipcRenderer.invoke('db:sincronizar-respuestas-al-servidor', token),
   contarPendientes: () => ipcRenderer.invoke('db:contar-pendientes'),

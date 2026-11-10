@@ -14,6 +14,11 @@ La guía técnica completa está en [`agents.md`](./agents.md).
 - Node.js 20 o superior.
 - npm.
 - Backend FastAPI accesible desde el portátil.
+- El servidor debe permitir en `CORS_ORIGINS` los orígenes de la app:
+  `http://localhost:5173`, `http://127.0.0.1:5173` en desarrollo y `null` para la app
+  empaquetada con `file://`.
+- En producción usa HTTPS. Con `webSecurity` activo, Chromium puede bloquear un servidor
+  `http://` remoto como contenido mixto. `http://localhost` sigue valiendo para desarrollo.
 - En Windows, para empaquetar: certificado de firma si se usa la build firmada.
 
 ## Instalación

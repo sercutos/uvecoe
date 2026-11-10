@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { pathToFileURL } = require("url");
 const { randomUUID } = require("crypto");
 const queries = require("./src/db/queries");
 const settings = require("./src/db/settings");
@@ -51,12 +52,31 @@ function createMainWindow() {
     webPreferences: {
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
-      webSecurity: false,
     },
   });
 
   // Quita el menú nativo de la ventana superior
   mainWindow.setMenu(null);
+
+  // La ventana solo puede quedarse en la app; no navega a webs externas.
+  const appFileUrl = pathToFileURL(
+    path.join(__dirname, "dist/index.html")
+  ).href;
+  const allowedPrefixes = isDev
+    ? ["http://localhost:5173", "http://127.0.0.1:5173"]
+    : [];
+  const isAllowedUrl = (url) =>
+    allowedPrefixes.some((prefix) => url.startsWith(prefix)) ||
+    url === appFileUrl ||
+    url.startsWith(`${appFileUrl}#`);
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (!isAllowedUrl(url)) event.preventDefault();
+  });
+  mainWindow.webContents.on("will-redirect", (event, url) => {
+    if (!isAllowedUrl(url)) event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   if (isDev) {
     mainWindow.loadURL("http://localhost:5173");

@@ -365,7 +365,7 @@ export default function EvaluationPage() {
         const id_station = configLocal?.station_id || 1;
 
         // 1. Pedimos a SQLite las respuestas que ya existan para este alumno en esta estación
-        const respuestasGuardadas = await window.api.invoke("db:obtener-respuestas-alumno", {
+        const respuestasGuardadas = await window.api.obtenerRespuestasAlumno({
           id_student: studentId,
           id_station: Number(id_station)
         });
@@ -480,7 +480,7 @@ export default function EvaluationPage() {
       }));
     };
 
-    if (!window.api?.invoke) {
+    if (!window.api?.guardarResultadoLocal) {
       revertir();
       setSaveError(
         "No se pudo guardar la respuesta: falta el puente de Electron."
@@ -489,7 +489,7 @@ export default function EvaluationPage() {
     }
 
     try {
-      await window.api.invoke("db:guardar-resultado", loteFilaUnica);
+      await window.api.guardarResultadoLocal(loteFilaUnica);
       setSaveError(null);
       window.dispatchEvent(new Event("uvecoe:pending-changed"));
       console.log(
