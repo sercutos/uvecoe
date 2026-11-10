@@ -179,20 +179,7 @@ export default function AdminConfig({ onConfigSuccess }) {
       setLoading(false);
     }
   };
-  // SOLO PARA PRUEBAS
-  useEffect(() => {
-    if (ecoes.length > 0 && !selectedEcoe) {
-      setSelectedEcoe("1");
-    }
-  }, [ecoes]);
 
-  useEffect(() => {
-  if (stations.length > 0 && !selectedStation) {
-    setSelectedStation(stations[0].id.toString());
-  }
-}, [stations]);
-
-  // BORRAR
   return (
     <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
       <h2>⚙️ Panel de Configuración del Administrador</h2>

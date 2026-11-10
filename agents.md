@@ -436,6 +436,7 @@ No queda ningún P0 funcional abierto.
   caer a SQLite en vez de quedarse cargando indefinidamente.
 - Cronómetro conectado al Chrono por Socket.IO: cuenta desde `stage.duration - t`, para en cero,
   reproduce los audios de `evento` y muestra “Sin cronómetro” si no hay estado.
+- El panel de configuración inicial exige elegir ECOE y estación; ya no autoselecciona.
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
@@ -453,7 +454,6 @@ No queda ningún P0 funcional abierto.
 
 ### P1 — robustez y calidad
 
-- Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx`).
 - Settings muestra estado verde aunque no haya conexión.
 - `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html` y `LogoOscuro`
   no se usan.
