@@ -19,6 +19,10 @@ import {
 import Grid from "@mui/material/GridLegacy";
 import { getApiBaseUrl } from "../../utils/apiConfig";
 import { fetchStationData } from "../../utils/stationData";
+import {
+  getSessionOrganizationId,
+  isSuperadminSession
+} from "../../utils/auth";
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -93,7 +97,25 @@ export default function Settings() {
         });
         if (!response.ok) throw new Error("No autorizado");
         const data = await response.json();
-        setEcoes(Array.isArray(data) ? data : []);
+        const lista = Array.isArray(data) ? data : [];
+        const isSuperadmin = isSuperadminSession();
+        const orgId = getSessionOrganizationId();
+
+        if (!isSuperadmin && orgId === null) {
+          setEcoes([]);
+          setDownloadStatus(
+            "❌ No se pudo determinar la organización de este usuario."
+          );
+          return;
+        }
+
+        setEcoes(
+          isSuperadmin
+            ? lista
+            : lista.filter(
+                (ecoe) => Number(ecoe.id_organization) === orgId
+              )
+        );
       } catch (error) {
         console.error("Error cargando ECOEs:", error);
         setEcoes([]);
@@ -203,6 +225,26 @@ export default function Settings() {
     e.preventDefault();
     if (!selectedEcoe || !selectedStation) return;
 
+    const ecoeSeleccionada = ecoes.find(
+      (ecoe) => Number(ecoe.id) === Number(selectedEcoe)
+    );
+    const orgId = getSessionOrganizationId();
+
+    if (
+      !ecoeSeleccionada ||
+      (!isSuperadminSession() &&
+        (orgId === null ||
+          Number(ecoeSeleccionada.id_organization) !== orgId))
+    ) {
+      setDownloadStatus("❌ No tiene permiso para descargar esta ECOE.");
+      setAlertInfo({
+        show: true,
+        severity: "error",
+        msg: "No tiene permiso para descargar esta ECOE."
+      });
+      return;
+    }
+
     setLoadingSync(true);
     setDownloadStatus("⏳ Descargando datos del servidor...");
 
@@ -300,6 +342,14 @@ export default function Settings() {
                   Selecciona el ECOE y la estación para descargar rúbricas,
                   estudiantes y usuarios del servidor central.
                 </Typography>
+                {!isSuperadminSession() && (
+                  <Typography
+                    variant="caption"
+                    sx={{ mt: 1, display: "block", color: "text.secondary" }}
+                  >
+                    Solo se muestran las ECOEs de tu organización.
+                  </Typography>
+                )}
 
                 <Box component="form" onSubmit={handleDescargarCompleto} sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
                   <FormControl fullWidth size="small">

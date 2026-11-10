@@ -15,6 +15,7 @@ import CloudDoneIcon from '@mui/icons-material/CloudDone';
 
 import { useNavigate, useLocation } from "react-router-dom";
 import { getApiBaseUrl } from "../utils/apiConfig";
+import { isAdminSession } from "../utils/auth";
 
 // Estilo base reutilizable para los modales estéticos de MUI
 const modalStyle = {
@@ -121,6 +122,11 @@ export default function Toolbar() {
     [
       "token_ecoe",
       "user_email",
+      "user_role",
+      "user_is_admin",
+      "user_is_superadmin",
+      "user_org_id",
+      "user_org_name",
       "selected_date_string",
       "selected_round_id",
       "selected_round_code",
@@ -170,11 +176,13 @@ export default function Toolbar() {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Configuración">
-          <IconButton onClick={() => navigate("/settings")} sx={getIconStyle("/settings")}>
-            <SettingsIcon />
-          </IconButton>
-        </Tooltip>
+        {isAdminSession() && (
+          <Tooltip title="Configuración">
+            <IconButton onClick={() => navigate("/settings")} sx={getIconStyle("/settings")}>
+              <SettingsIcon />
+            </IconButton>
+          </Tooltip>
+        )}
 
         <Tooltip title="Alumnos">
           <IconButton onClick={() => navigate("/students")} sx={getIconStyle("/students")}>
@@ -294,7 +302,7 @@ export default function Toolbar() {
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>🔄 Sincronizar al Servidor</Typography>
               <Typography variant="body2" color="text.secondary">
-                Al finalizar todas las evaluaciones y cuando vuelvas a disponer de conexión a internet, entra en la sección de <strong>Configuración</strong> para enviar el lote de respuestas guardadas en SQLite hacia el servidor central.
+                Al finalizar todas las evaluaciones y cuando vuelvas a disponer de conexión a internet, pulsa el indicador de <strong>pendientes</strong> de la barra superior para enviar las respuestas guardadas. Si no puedes, pide a un administrador que lo haga desde Configuración.
               </Typography>
             </Box>
           </Box>

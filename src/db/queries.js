@@ -240,10 +240,34 @@ const queries = {
             rolDefinitivo = u.role.trim();
           }
 
+          const rolesServidor = Array.isArray(u.roles)
+            ? u.roles.map(String)
+            : typeof u.roles === "string"
+              ? [u.roles]
+              : [];
+          const isSuperadmin =
+            u.is_superadmin === true ||
+            rolesServidor.includes("superadmin");
+          const isAdmin =
+            u.is_admin === true ||
+            isSuperadmin ||
+            rolesServidor.includes("administrator") ||
+            rolDefinitivo === "administrator" ||
+            rolDefinitivo === "superadmin";
+          const organizationId =
+            u.id_organization === null || u.id_organization === undefined
+              ? null
+              : Number(u.id_organization);
+
           const usuario = {
             usuario_id_server: u.id,
             email,
-            role: rolDefinitivo
+            role: rolDefinitivo,
+            is_admin: isAdmin,
+            is_superadmin: isSuperadmin,
+            id_organization: Number.isFinite(organizationId)
+              ? organizationId
+              : null
           };
 
           if (u.token_temporal !== undefined && u.token_temporal !== null) {

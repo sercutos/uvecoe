@@ -126,6 +126,7 @@ src/renderer/
   utils/
     apiConfig.js            URL base y helpers de paths
     api.js                  fetchWithAuth (Bearer desde sessionStorage)
+    auth.js                 Rol de sesión, admin/superadmin y organización
     stationData.js          Descarga completa y paginada de la estación
 
 assets/                     splash.html, login.html (sin uso), imágenes
@@ -142,7 +143,9 @@ scripts/
 
 `/login` → `/` (fecha) → `/rounds` → `/turns` → `/evaluation`
 Rutas auxiliares: `/settings`, `/students`, `/questions`. El Banco de Preguntas es solo
-informativo: no tiene interruptores ni guarda respuestas.
+informativo: no tiene interruptores ni guarda respuestas. `/settings` solo es accesible para un
+superadmin de la plataforma o un `administrator` de la organización; la lista de ECOEs se filtra
+por `id_organization` (el backend ya la filtra, el cliente lo vuelve a comprobar).
 
 Si se entra directamente en `/evaluation` sin la selección completa (por ejemplo desde el icono
 "Evaluación Activa" del Toolbar), se redirige al primer paso que falte: `/`, `/rounds` o `/turns`.
@@ -178,7 +181,7 @@ Ruta de la DB:
 | Tabla | Campos relevantes | Notas |
 |---|---|---|
 | `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id`, `station_order` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
-| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `token_temporal`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online |
+| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
 | `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `max_points`, `active` | `question_schema` incluye `type` y `options[].points`; `max_points` se rellena desde la rúbrica publicada; `active=false` si la pregunta ya no se publica |
 | `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `sync_batch`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert`; `sync_batch` marca el lote en vuelo y cualquier escritura nueva lo limpia |
@@ -313,9 +316,12 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
     `k, k-1, …, 1, 12, …, k+1`. Implementado en `reorderStudentsForStation`.
 11. **Login online/offline:** el primer login de cada usuario debe hacerse con red para guardar el
     `password_hash` bcrypt. Sin hash, el login offline se rechaza. Un 401/403 del servidor nunca
-    cae a offline; solo se usa offline si falla la red o el servidor no está operativo.
-12. **Logout:** debe revocar el token (best effort), limpiar `token_ecoe`, `user_email` y toda la
-    selección de fecha/ronda/turno, y conservar `api_base_url` para el siguiente Login.
+    cae a offline; solo se usa offline si falla la red o el servidor no está operativo. Tras el
+    login online se lee `/users/me` para guardar `role`, `is_admin`, `is_superadmin` e
+    `id_organization`; si esa llamada falla se usa el último perfil local.
+12. **Logout:** debe revocar el token (best effort), limpiar `token_ecoe`, `user_email`, los datos
+    de rol/organización y toda la selección de fecha/ronda/turno, y conservar `api_base_url` para
+    el siguiente Login.
 13. **Sincronización:** el Toolbar muestra `N pendientes` / `Al día` y permite sincronizar al
     pulsar. La evaluación intenta auto-sync al entrar, cada 5 minutos y al pasar de alumno; es
     silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan. El lote

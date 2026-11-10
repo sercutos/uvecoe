@@ -18,6 +18,11 @@ import LockIcon from "@mui/icons-material/Lock";
 import bcrypt from "bcryptjs";
 
 import logoImg from "../../../../assets/images/logo1.png";
+import {
+  isAdminUser,
+  isSuperadminUser,
+  saveUserSession
+} from "../../utils/auth";
 
 function normalizeBaseUrl(value) {
   let url = String(value || "").trim();
@@ -184,29 +189,32 @@ export default function FirstRunSetup({ onComplete }) {
 
       const me = await meResponse.json();
       const roles = Array.isArray(me.roles) ? me.roles : [];
-      const isAdmin =
-        me.is_superadmin === true || roles.includes("administrator");
 
-      if (!isAdmin) {
+      if (!isAdminUser(me)) {
         throw new Error("El usuario no tiene permisos de administrador.");
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
       const emailFinal = me.email || emailLimpio;
+      const isSuperadmin = isSuperadminUser(me);
 
       await window.api.setSetting("api_base_url", base);
       sessionStorage.setItem("api_base_url", base);
 
       await window.api.guardarUsuarioLocal({
         id: me.id,
+        usuario_id_server: me.id,
         email: emailFinal,
         role: roles[0] || "administrator",
+        is_admin: true,
+        is_superadmin: isSuperadmin,
+        id_organization: me.id_organization ?? null,
         token: loginData.token,
         password_hash: passwordHash
       });
 
       sessionStorage.setItem("token_ecoe", loginData.token);
-      sessionStorage.setItem("user_email", emailFinal);
+      saveUserSession({ ...me, email: emailFinal });
       await window.api.setSetting("setup_completed", "true");
 
       setFeedback({

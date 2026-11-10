@@ -6,6 +6,11 @@ import bcrypt from "bcryptjs";
 
 import logoImg from "../../../assets/images/logo1.png";
 import { getApiBaseUrl } from "../utils/apiConfig";
+import {
+  isAdminUser,
+  isSuperadminUser,
+  saveUserSession
+} from "../utils/auth";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -47,7 +52,7 @@ export default function Login({ onLogin }) {
         "token_ecoe",
         usuarioLocal.token_temporal || "offline_token_session"
       );
-      sessionStorage.setItem("user_email", emailLimpio);
+      saveUserSession({ ...usuarioLocal, email: emailLimpio });
 
       alert(
         "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
@@ -121,16 +126,60 @@ export default function Login({ onLogin }) {
       }
 
       sessionStorage.setItem("token_ecoe", data.token);
-      sessionStorage.setItem("user_email", emailLimpio);
+
+      // /auth/tokens no devuelve rol ni organización: los leemos de /users/me.
+      let usuarioRemoto = null;
+      try {
+        const meResponse = await fetch(
+          `${getApiBaseUrl()}/backend/api/v1/users/me`,
+          { headers: { Authorization: `Bearer ${data.token}` } }
+        );
+
+        if (meResponse.ok) {
+          usuarioRemoto = await meResponse.json();
+        } else {
+          console.warn(`[LOGIN] /users/me respondió ${meResponse.status}`);
+        }
+      } catch (meError) {
+        console.warn("[LOGIN] No se pudo leer /users/me:", meError.message);
+      }
+
+      // Si /users/me falla, usamos el último perfil guardado en este equipo.
+      if (!usuarioRemoto) {
+        try {
+          usuarioRemoto = await window.api.obtenerUsuarioLocal(emailLimpio);
+        } catch (localError) {
+          console.warn(
+            "[LOGIN] No se pudo leer el usuario local:",
+            localError.message
+          );
+        }
+      }
+
+      const usuarioSesion = usuarioRemoto || {
+        email: emailLimpio,
+        role: "evaluador"
+      };
+      const rolSesion =
+        usuarioSesion.role ||
+        (Array.isArray(usuarioSesion.roles) ? usuarioSesion.roles[0] : "") ||
+        "evaluador";
+
+      saveUserSession({ ...usuarioSesion, email: emailLimpio });
 
       // Guardamos un hash de la contraseña para poder validar el login offline.
       try {
         const passwordHash = await bcrypt.hash(password, 10);
 
         await window.api.guardarUsuarioLocal({
-          id: data.user_id || data.id || Date.now(),
+          id: usuarioSesion.id || data.user_id || data.id || Date.now(),
+          usuario_id_server:
+            usuarioSesion.usuario_id_server ?? usuarioSesion.id ?? null,
           email: emailLimpio,
-          role: data.role || "evaluador",
+          role: rolSesion,
+          is_admin: isAdminUser(usuarioSesion),
+          is_superadmin: isSuperadminUser(usuarioSesion),
+          id_organization: usuarioSesion.id_organization ?? null,
           token: data.token,
           password_hash: passwordHash
         });

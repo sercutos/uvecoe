@@ -169,6 +169,22 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
         : null;
 
     const emailNormalizado = String(usuario.email || "").trim().toLowerCase();
+    const rol = usuario.role || "evaluador";
+    const isSuperadmin =
+      usuario.is_superadmin === true || rol === "superadmin";
+    const isAdmin =
+      usuario.is_admin === true ||
+      isSuperadmin ||
+      rol === "administrator" ||
+      rol === "superadmin";
+    const organizationId =
+      usuario.id_organization === null ||
+      usuario.id_organization === undefined
+        ? null
+        : Number(usuario.id_organization);
+    const idOrganization = Number.isFinite(organizationId)
+      ? organizationId
+      : null;
 
     const usuarioExistente = await db("users")
       .whereRaw("LOWER(email) = ?", [emailNormalizado])
@@ -176,8 +192,11 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
 
     if (usuarioExistente) {
       const cambios = {
-        role: usuario.role || "evaluador",
-        usuario_id_server: idServerValido
+        role: rol,
+        usuario_id_server: idServerValido,
+        is_admin: isAdmin,
+        is_superadmin: isSuperadmin,
+        id_organization: idOrganization
       };
 
       // No borrar el token/hash existente si esta llamada no los trae.
@@ -191,10 +210,13 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
     } else {
       await db("users").insert({
         email: emailNormalizado,
-        role: usuario.role || "evaluador",
+        role: rol,
         token_temporal: tokenLocal,
         password_hash: passwordHash,
-        usuario_id_server: idServerValido
+        usuario_id_server: idServerValido,
+        is_admin: isAdmin,
+        is_superadmin: isSuperadmin,
+        id_organization: idOrganization
       });
       console.log(
         `💾 [KNEX] Guardado nuevo usuario en el portátil: ${emailNormalizado}`

@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 
 import { initApiConfig } from "./utils/apiConfig";
+import { isAdminSession } from "./utils/auth";
 
 const theme = createTheme({
   palette: {
@@ -38,6 +39,15 @@ const Router = window.location.protocol === "file:" ? HashRouter : BrowserRouter
 function PrivateRoute({ children }) {
   const hasToken = sessionStorage.getItem("token_ecoe") !== null;
   return hasToken ? children : <Navigate to="/login" />;
+}
+
+// Settings solo para superadmin de la plataforma o admin de organización.
+function AdminRoute({ children }) {
+  if (sessionStorage.getItem("token_ecoe") === null) {
+    return <Navigate to="/login" />;
+  }
+
+  return isAdminSession() ? children : <Navigate to="/" replace />;
 }
 
 // Inicializa la URL del servidor ANTES de renderizar cualquier pantalla,
@@ -129,7 +139,7 @@ function Bootstrap() {
       <Route path="/rounds" element={<PrivateRoute><App><SelectRoundPage /></App></PrivateRoute>} />
       <Route path="/turns" element={<PrivateRoute><App><SelectTurnPage /></App></PrivateRoute>} />
 
-      <Route path="/settings" element={<PrivateRoute><App><Settings /></App></PrivateRoute>} />
+      <Route path="/settings" element={<AdminRoute><App><Settings /></App></AdminRoute>} />
       <Route path="/questions" element={<PrivateRoute><App><Questions /></App></PrivateRoute>} />
       <Route path="/evaluation" element={<PrivateRoute><App><Evaluation /></App></PrivateRoute>} />
       <Route path="/students" element={<PrivateRoute><App><Students /></App></PrivateRoute>} />
