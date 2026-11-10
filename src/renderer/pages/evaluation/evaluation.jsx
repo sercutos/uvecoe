@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import Toolbar from "../../components/Toolbar";
 
-import { CssBaseline, Container, Paper, Typography, Switch, Box, Button, FormControlLabel, IconButton, CircularProgress, Alert } from "@mui/material";
+import { CssBaseline, Container, Paper, Typography, Switch, Box, Button, FormControlLabel, IconButton, CircularProgress, Alert, Snackbar } from "@mui/material";
 import Grid from "@mui/material/GridLegacy";
 
 // Importamos iconos de flechas 
@@ -22,6 +22,7 @@ import {
   questionMaxPoints,
   reorderStudentsForStation
 } from "../../utils/scoring.mjs";
+import useChrono from "../../hooks/useChrono";
 
 export default function EvaluationPage() {
   const navigate = useNavigate();
@@ -31,6 +32,7 @@ export default function EvaluationPage() {
   const [questions, setQuestions] = useState([]); 
   const [answersByStudent, setAnswersByStudent] = useState({});
   const [stationName, setStationName] = useState("Cargando Estación..."); 
+  const [stationId, setStationId] = useState(null);
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -44,6 +46,12 @@ export default function EvaluationPage() {
 
   const shiftCodeVisual = sessionStorage.getItem("selected_shift_code") || "-";
   const roundCodeVisual = sessionStorage.getItem("selected_round_code") || "-";
+  const chronoRoundId = Number(sessionStorage.getItem("selected_round_id")) || null;
+  const chrono = useChrono({ roundId: chronoRoundId, stationId });
+  const chronoAlert = ["finished", "aborted"].includes(chrono.status);
+  const chronoWarn = ["paused", "stale", "offline", "connecting", "idle"].includes(
+    chrono.status
+  );
 
   // Sincronización silenciosa en segundo plano. No bloquea la evaluación:
   // si falla (sin WiFi), las respuestas quedan pendientes y se reintenta.
@@ -135,6 +143,8 @@ export default function EvaluationPage() {
         if (!ecoeId || !stationIdConfigurado) {
           throw new Error("El equipo no cuenta con una configuración local de estación.");
         }
+
+        setStationId(Number(stationIdConfigurado));
 
         let targetStation = null;
         let rawStudents = [];
@@ -519,9 +529,6 @@ export default function EvaluationPage() {
       // Avanzamos de índice. El useEffect que pusimos en el paso anterior
       // se encargará de leer automáticamente de SQLite lo que tenga el siguiente alumno.
       setCurrentStudentIndex(currentStudentIndex + 1);
-      
-      setMinutes(7);
-      setSeconds(0);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     } else {
@@ -539,28 +546,6 @@ export default function EvaluationPage() {
       setCurrentStudentIndex(currentStudentIndex - 1);
     }
   };
-
-  // --- CRONÓMETRO ---
-  const [minutes, setMinutes] = useState(7);
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (seconds > 0) {
-        setSeconds(seconds - 1);
-      } else if (seconds === 0) {
-        if (minutes === 0) {
-          setMinutes(7);
-          setSeconds(0);
-        } else {
-          setMinutes(minutes - 1);
-          setSeconds(59);
-        }
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [minutes, seconds]);
 
   // --- PANTALLAS DE CARGA Y ERROR ---
   if (loading) {
@@ -588,6 +573,20 @@ export default function EvaluationPage() {
     <React.Fragment>
       <CssBaseline />
       <Toolbar />
+      <Snackbar
+        open={Boolean(chrono.event)}
+        autoHideDuration={8000}
+        onClose={chrono.clearEvent}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert
+          severity="info"
+          onClose={chrono.clearEvent}
+          sx={{ width: "100%" }}
+        >
+          {chrono.event?.message}
+        </Alert>
+      </Snackbar>
       <Container maxWidth="lg" sx={{ mt: 10 }}>
         {saveError && (
           <Alert
@@ -611,15 +610,48 @@ export default function EvaluationPage() {
                 {stationName}
               </Typography>
               
-              <Box 
-                sx={{ 
-                  backgroundColor: minutes === 0 ? "#ffebee" : "#d2e4ec", 
-                  color: minutes === 0 ? "#c62828" : "#006687", 
-                  p: "2px 10px", borderRadius: "4px", fontWeight: "bold",
-                  fontFamily: "monospace", fontSize: "1.1rem", transition: "all 0.3s ease" 
+              <Box
+                sx={{
+                  backgroundColor: chronoAlert
+                    ? "#ffebee"
+                    : chronoWarn
+                      ? "#fff3e0"
+                      : "#d2e4ec",
+                  color: chronoAlert ? "#c62828" : chronoWarn ? "#e65100" : "#006687",
+                  p: "2px 10px",
+                  borderRadius: "4px",
+                  transition: "all 0.3s ease",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  minWidth: "92px"
                 }}
               >
-                {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+                <Typography
+                  component="span"
+                  sx={{
+                    fontWeight: "bold",
+                    fontFamily: "monospace",
+                    fontSize: "1.1rem",
+                    lineHeight: 1
+                  }}
+                >
+                  {chrono.formatted}
+                </Typography>
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize: "0.62rem",
+                    lineHeight: 1.1,
+                    mt: 0.25,
+                    maxWidth: "170px",
+                    textAlign: "center",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis"
+                  }}
+                >
+                  {chrono.label}
+                </Typography>
               </Box>
             </Box>
 

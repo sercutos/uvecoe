@@ -19,6 +19,21 @@ export function getApiBaseUrl() {
   return sessionStorage.getItem(STORAGE_KEY) || "http://localhost:8000";
 }
 
+// El Chrono se sirve por Caddy/nginx en el mismo origen que el API.
+// Si api_base_url apunta directo al contenedor (:8000), se quita ese puerto.
+export function getChronoBaseUrl() {
+  const override = sessionStorage.getItem("chrono_base_url");
+  if (override) return override.replace(/\/+$/, "");
+
+  try {
+    const api = new URL(getApiBaseUrl());
+    const port = api.port === "8000" ? "" : api.port;
+    return `${api.protocol}//${api.hostname}${port ? `:${port}` : ""}`;
+  } catch {
+    return "http://localhost";
+  }
+}
+
 export function apiPath(path) {
   return `${getApiBaseUrl()}/backend/api/v1${path.startsWith("/") ? path : `/${path}`}`;
 }

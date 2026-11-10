@@ -14,6 +14,8 @@ La guía técnica completa está en [`agents.md`](./agents.md).
 - Node.js 20 o superior.
 - npm.
 - Backend FastAPI accesible desde el portátil.
+- La URL del servidor debe ser la de Caddy/nginx (por ejemplo `https://ecoe.midominio.es`),
+  no el puerto `8000` directo: el cronómetro usa `/socket.io` en el mismo origen.
 - El servidor debe permitir en `CORS_ORIGINS` los orígenes de la app:
   `http://localhost:5173`, `http://127.0.0.1:5173` en desarrollo y `null` para la app
   empaquetada con `file://`.

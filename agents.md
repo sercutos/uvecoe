@@ -124,13 +124,18 @@ src/renderer/
     questions/              Vista informativa del banco de preguntas (sin responder)
     students/               Tabla de alumnos
     home/                   Archivo muerto/roto, no importado
+  hooks/
+    useChrono.js            Socket.IO del cronómetro y eventos de audio
   utils/
-    apiConfig.js            URL base y helpers de paths
+    apiConfig.js            URL base, chrono base y helpers de paths
     api.js                  fetchWithAuth (Bearer desde sessionStorage)
     auth.js                 Rol de sesión, admin/superadmin y organización
+    chrono.mjs              Formato y estado del cronómetro (con test)
+    chronoAudio.js          Reproducción de los audios de evento
     scoring.mjs             Rotación de alumnos y puntos (con test)
     stationData.js          Descarga completa y paginada de la estación
 
+src/renderer/assets/sounds/ Audios del cronómetro (entrar, salir, avisos)
 assets/                     splash.html, login.html (sin uso), imágenes
 data/                       uvecoe.db (runtime; openecoe_lite.db fue eliminada)
 dist/                       Build de Vite (regenerado el 2026-11-07)
@@ -246,6 +251,18 @@ servidor válida.
 Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígenes de la app:
 `http://localhost:5173`, `http://127.0.0.1:5173` (desarrollo) y `null` (app empaquetada con
 `file://`).
+
+### Cronómetro por Socket.IO
+
+- Se conecta al **mismo origen** que `api_base_url` (Caddy/nginx), namespace
+  `/round{selected_round_id}`.
+- Caddy enruta `/socket.io/*` al contenedor `chrono:5001`.
+- Eventos: `tic_tac` (cada segundo), `init_stage`, `evento`, `end_round`, `aborted`.
+- `tic_tac` manda tiempo transcurrido: `restante = stage.duration - t`.
+- `evento.target` es `0` (todas las estaciones) o IDs separados por coma.
+- Si no hay tick ni estado, la app muestra “Sin cronómetro” y usa el audio/megafonía.
+- Los audios de `evento.sound` (`entrar.mp3`, `salir.mp3`, etc.) se reproducen desde
+  `src/renderer/assets/sounds/`.
 
 | Endpoint | Forma de respuesta | Notas críticas |
 |---|---|---|
@@ -417,6 +434,8 @@ No queda ningún P0 funcional abierto.
 - Sincronización con Bearer token, timeout de 30 s por lote y validación de `inserted_or_updated`.
 - Timeout de 10 s en las peticiones del renderer (`fetchWithAuth`, Settings y AdminConfig) para
   caer a SQLite en vez de quedarse cargando indefinidamente.
+- Cronómetro conectado al Chrono por Socket.IO: cuenta desde `stage.duration - t`, para en cero,
+  reproduce los audios de `evento` y muestra “Sin cronómetro” si no hay estado.
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
@@ -435,7 +454,6 @@ No queda ningún P0 funcional abierto.
 ### P1 — robustez y calidad
 
 - Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx`).
-- Cronómetro que vuelve a `07:00` al llegar a cero (`evaluation.jsx`).
 - Settings muestra estado verde aunque no haya conexión.
 - `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html` y `LogoOscuro`
   no se usan.

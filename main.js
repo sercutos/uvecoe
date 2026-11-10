@@ -8,6 +8,9 @@ const settings = require("./src/db/settings");
 
 const isDev = process.env.NODE_ENV === "development";
 
+// Los avisos del cronómetro suenan sin depender de un clic previo.
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 let mainWindow;
 let splashWindow;
 let db;

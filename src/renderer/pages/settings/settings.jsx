@@ -523,7 +523,8 @@ export default function Settings() {
               <CardContent>
                 <Typography variant="h6">🌐 Servidor FastAPI</Typography>
                 <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
-                  URL base del servidor central (sin /backend/api/v1).
+                  URL base de Caddy/nginx (sin /backend/api/v1). El cronómetro usa
+                  el mismo origen para /socket.io; no pongas el puerto 8000 directo.
                 </Typography>
                 <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
                   <TextField

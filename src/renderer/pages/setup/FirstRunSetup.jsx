@@ -239,6 +239,8 @@ export default function FirstRunSetup({ onComplete }) {
 
         <Alert severity="info" sx={{ mt: 3 }}>
           Introduce la URL base del servidor, sin <code>/backend/api/v1</code>.
+          Para el cronómetro usa la URL de Caddy/nginx (normalmente HTTPS), no el
+          puerto <code>8000</code> directo.
         </Alert>
 
         {feedback && (
