@@ -1,6 +1,13 @@
 import { apiPath } from "./apiConfig";
 import { markServerAuthRequired } from "./auth";
 
+// Evita que una red a medias deje la pantalla esperando para siempre.
+export function timeoutSignal(ms = 10000) {
+  return typeof AbortSignal.timeout === "function"
+    ? AbortSignal.timeout(ms)
+    : undefined;
+}
+
 export const fetchWithAuth = async (input, options = {}) => {
   const url = input.startsWith("http") ? input : apiPath(input);
 
@@ -15,9 +22,12 @@ export const fetchWithAuth = async (input, options = {}) => {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const signal = options.signal ?? timeoutSignal();
+
   const response = await fetch(url, {
     ...options,
-    headers
+    headers,
+    ...(signal ? { signal } : {})
   });
 
   if (response.status === 401) {

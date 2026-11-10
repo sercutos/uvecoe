@@ -409,7 +409,9 @@ No queda ningún P0 funcional abierto.
 - `max_points` y `options[].points` se leen del servidor; migración corrige resultados antiguos.
 - `AnswerBulkItem.points` del backend pasa de `int` a `float` (archivo externo
   `/home/scubero/openECOE-FASTAPI/backend/app/schemas/answer.py`).
-- Sincronización con Bearer token, timeout de 30 s y validación de `inserted_or_updated`.
+- Sincronización con Bearer token, timeout de 30 s por lote y validación de `inserted_or_updated`.
+- Timeout de 10 s en las peticiones del renderer (`fetchWithAuth`, Settings y AdminConfig) para
+  caer a SQLite en vez de quedarse cargando indefinidamente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
   (al entrar, cada 5 min y al pasar de alumno). Bloqueo para evitar sync simultáneas.
 - Soft-delete de preguntas/alumnos obsoletos con `active`; resultados históricos conservados.
@@ -430,7 +432,6 @@ No queda ningún P0 funcional abierto.
   no se usan.
 - Coexisten `package-lock.json` y `yarn.lock`.
 - `src/db/migrations/init.js` no tiene timestamp; no borrarlo (ya está registrado en DBs antiguas).
-- `fetch` sin timeout ni abort en el renderer.
 
 ### P2 — mantenimiento
 

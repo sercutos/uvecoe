@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import Grid from "@mui/material/GridLegacy";
 import { getApiBaseUrl } from "../../utils/apiConfig";
+import { timeoutSignal } from "../../utils/api";
 import { fetchStationData } from "../../utils/stationData";
 import {
   clearServerAuthRequired,
@@ -106,7 +107,8 @@ export default function Settings() {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
-          }
+          },
+          signal: timeoutSignal()
         });
         if (!response.ok) {
           const error = new Error("No autorizado");
@@ -140,7 +142,11 @@ export default function Settings() {
           window.dispatchEvent(new Event("uvecoe:pending-changed"));
         }
         setEcoes([]);
-        setDownloadStatus("❌ No autorizado. Inicie sesión en el servidor primero.");
+        setDownloadStatus(
+          error.name === "TimeoutError" || error.name === "AbortError"
+            ? "❌ El servidor no respondió a tiempo."
+            : "❌ No autorizado. Inicie sesión en el servidor primero."
+        );
       }
     }
     fetchEcoes();
@@ -172,7 +178,8 @@ export default function Settings() {
             headers: {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${token}`
-            }
+            },
+            signal: timeoutSignal()
           }
         );
         if (!response.ok) {
@@ -195,7 +202,11 @@ export default function Settings() {
           window.dispatchEvent(new Event("uvecoe:pending-changed"));
         }
         setStations([]);
-        setDownloadStatus("❌ Error al cargar las estaciones.");
+        setDownloadStatus(
+          error.name === "TimeoutError" || error.name === "AbortError"
+            ? "❌ El servidor no respondió a tiempo."
+            : "❌ Error al cargar las estaciones."
+        );
       }
     }
     fetchStations();

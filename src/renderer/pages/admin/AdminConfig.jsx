@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getApiBaseUrl } from "../../utils/apiConfig";
+import { timeoutSignal } from "../../utils/api";
 import { fetchStationData } from "../../utils/stationData";
 
 export default function AdminConfig({ onConfigSuccess }) {
@@ -25,7 +26,8 @@ export default function AdminConfig({ onConfigSuccess }) {
             headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}` 
-            }
+            },
+            signal: timeoutSignal()
         });
         
         if (!response.ok) {
@@ -44,7 +46,11 @@ export default function AdminConfig({ onConfigSuccess }) {
       } catch (error) {
         console.error("Error cargando ECOEs del servidor:", error);
         setEcoes([]); // Evita que explote el .map() al dejarlo como array vacío
-        setStatusMessage("❌ No autorizado. Inicie sesión en el servidor primero.");
+        setStatusMessage(
+          error.name === "TimeoutError" || error.name === "AbortError"
+            ? "❌ El servidor no respondió a tiempo."
+            : "❌ No autorizado. Inicie sesión en el servidor primero."
+        );
       }
     }
     fetchEcoes();
@@ -67,7 +73,8 @@ export default function AdminConfig({ onConfigSuccess }) {
             "Content-Type": "application/json",
             // 🚀 Le pasamos el token para que FastAPI nos deje pasar
             "Authorization": `Bearer ${token}`
-            }
+            },
+            signal: timeoutSignal()
         });
 
         if (!response.ok) {
@@ -91,7 +98,11 @@ export default function AdminConfig({ onConfigSuccess }) {
         } catch (error) {
             console.error("Error cargando estaciones:", error);
             setStations([]); // Evita que explote el .map()
-            setStatusMessage("❌ Error al cargar las estaciones. Permiso denegado por el servidor.");
+            setStatusMessage(
+                error.name === "TimeoutError" || error.name === "AbortError"
+                    ? "❌ El servidor no respondió a tiempo."
+                    : "❌ Error al cargar las estaciones. Permiso denegado por el servidor."
+            );
         }
     }
 
