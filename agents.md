@@ -109,7 +109,8 @@ src/renderer/
   App.jsx                   Guardián: comprueba configuración y API base
   components/
     Login.jsx               Login online/offline con hash bcrypt
-    Toolbar.jsx             Navegación, ayuda, acerca de, logout
+    ReauthDialog.jsx        Reconexión con el servidor sin salir de la evaluación
+    Toolbar.jsx             Navegación, ayuda, acerca de, logout y estado de sync
     Logo/Logo.jsx           Logo (actualmente importado pero no usado en Login)
   pages/
     setup/FirstRunSetup.jsx Asistente de primer arranque: URL + admin
@@ -157,7 +158,11 @@ Claves de `sessionStorage` usadas:
 
 | Clave | Contenido |
 |---|---|
-| `token_ecoe` | Token Bearer |
+| `local_session` | Sesión local válida; permite evaluar aunque no haya token |
+| `token_ecoe` | Token Bearer real; nunca se inventa en modo offline |
+| `token_expires_at` | Caducidad devuelta por `/auth/tokens` |
+| `sync_auth_required` | El servidor rechazó el token; hay que reconectar para sincronizar |
+| `user_email`, `user_role`, `user_is_admin`, `user_is_superadmin`, `user_org_id`, `user_org_name` | Identidad y permisos de la sesión |
 | `api_base_url` | URL base cacheada |
 | `todos_los_turnos` | Array completo de turnos |
 | `selected_date_string` | Día en formato `dd/mm/aaaa` |
@@ -181,7 +186,7 @@ Ruta de la DB:
 | Tabla | Campos relevantes | Notas |
 |---|---|---|
 | `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id`, `station_order` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
-| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
+| `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `token_expires_at`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
 | `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `max_points`, `active` | `question_schema` incluye `type` y `options[].points`; `max_points` se rellena desde la rúbrica publicada; `active=false` si la pregunta ya no se publica |
 | `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `sync_batch`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert`; `sync_batch` marca el lote en vuelo y cualquier escritura nueva lo limpia |
@@ -318,7 +323,8 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
     `password_hash` bcrypt. Sin hash, el login offline se rechaza. Un 401/403 del servidor nunca
     cae a offline; solo se usa offline si falla la red o el servidor no está operativo. Tras el
     login online se lee `/users/me` para guardar `role`, `is_admin`, `is_superadmin` e
-    `id_organization`; si esa llamada falla se usa el último perfil local.
+    `id_organization`; si esa llamada falla se usa el último perfil local. El login offline
+    guarda `local_session` y nunca inventa un token.
 12. **Logout:** debe revocar el token (best effort), limpiar `token_ecoe`, `user_email`, los datos
     de rol/organización y toda la selección de fecha/ronda/turno, y conservar `api_base_url` para
     el siguiente Login.
@@ -326,7 +332,9 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
     pulsar. La evaluación intenta auto-sync al entrar, cada 5 minutos y al pasar de alumno; es
     silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan. El lote
     en vuelo se marca con `sync_batch`; si el evaluador cambia una respuesta durante el envío, el
-    `upsert` limpia esa marca y la fila no se da por sincronizada.
+    `upsert` limpia esa marca y la fila no se da por sincronizada. Si el servidor responde 401,
+    no se cierra la sesión ni se navega a `/login`: se marca `sync_auth_required`, se borra solo
+    el token y el Toolbar ofrece reconectar sin interrumpir la evaluación.
 14. **Primer arranque:** una DB nueva (`setup_completed=false`) muestra el asistente antes del
     Login. Exige probar `/backend/status`, autenticar un admin y validar `/users/me`
     (`is_superadmin` o rol `administrator`). Si falla, no se puede continuar. Las DBs ya

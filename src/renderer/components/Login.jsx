@@ -5,10 +5,12 @@ import LockIcon from '@mui/icons-material/Lock';
 import bcrypt from "bcryptjs";
 
 import logoImg from "../../../assets/images/logo1.png";
-import { getApiBaseUrl } from "../utils/apiConfig";
 import {
-  isAdminUser,
-  isSuperadminUser,
+  fetchCurrentUser,
+  isServerAuthRequired,
+  loginOnline,
+  persistLogin,
+  saveServerToken,
   saveUserSession
 } from "../utils/auth";
 
@@ -48,14 +50,21 @@ export default function Login({ onLogin }) {
         return;
       }
 
-      sessionStorage.setItem(
-        "token_ecoe",
-        usuarioLocal.token_temporal || "offline_token_session"
+      const tokenGuardado =
+        usuarioLocal.token_temporal === "offline_token_session"
+          ? null
+          : usuarioLocal.token_temporal || null;
+
+      saveServerToken(
+        tokenGuardado,
+        usuarioLocal.token_expires_at || null
       );
       saveUserSession({ ...usuarioLocal, email: emailLimpio });
 
       alert(
-        "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
+        isServerAuthRequired()
+          ? "⚠️ Modo Offline activado: puedes evaluar, pero necesitarás reconectar para sincronizar."
+          : "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
       );
 
       if (onLogin) onLogin();
@@ -71,128 +80,44 @@ export default function Login({ onLogin }) {
     if (submitting) return;
     setSubmitting(true);
 
+    const emailLimpio = email.trim().toLowerCase();
+
     try {
       console.log("[LOGIN] Intentando autenticación online con FastAPI...");
 
-      const emailLimpio = email.trim().toLowerCase();
-      let response;
-
-      try {
-        response = await fetch(`${getApiBaseUrl()}/backend/auth/tokens`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            email: emailLimpio,
-            password: password
-          })
-        });
-      } catch (networkError) {
-        // Sin red: intentamos validar localmente.
-        await loginOffline(networkError.message);
-        return;
-      }
-
-      // Credenciales incorrectas: no permitimos el bypass offline.
-      if (response.status === 401 || response.status === 403) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error(
-          "[LOGIN] Error de credenciales:",
-          response.status,
-          errorData
-        );
-        alert("Usuario o contraseña incorrectos en el servidor.");
-        return;
-      }
-
-      if (!response.ok) {
-        // 500/502...: el servidor no está operativo, probamos offline.
-        console.warn(
-          `[LOGIN] Servidor respondió ${response.status}. Probando modo offline...`
-        );
-        await loginOffline(`HTTP ${response.status}`);
-        return;
-      }
-
-      const data = await response.json();
-
-      if (!data.token) {
-        console.warn(
-          "[LOGIN] El servidor no devolvió token. Probando modo offline..."
-        );
-        await loginOffline("Respuesta sin token");
-        return;
-      }
-
-      sessionStorage.setItem("token_ecoe", data.token);
+      const data = await loginOnline(emailLimpio, password);
 
       // /auth/tokens no devuelve rol ni organización: los leemos de /users/me.
       let usuarioRemoto = null;
       try {
-        const meResponse = await fetch(
-          `${getApiBaseUrl()}/backend/api/v1/users/me`,
-          { headers: { Authorization: `Bearer ${data.token}` } }
-        );
-
-        if (meResponse.ok) {
-          usuarioRemoto = await meResponse.json();
-        } else {
-          console.warn(`[LOGIN] /users/me respondió ${meResponse.status}`);
-        }
+        usuarioRemoto = await fetchCurrentUser(data.token);
       } catch (meError) {
         console.warn("[LOGIN] No se pudo leer /users/me:", meError.message);
       }
 
-      // Si /users/me falla, usamos el último perfil guardado en este equipo.
-      if (!usuarioRemoto) {
-        try {
-          usuarioRemoto = await window.api.obtenerUsuarioLocal(emailLimpio);
-        } catch (localError) {
-          console.warn(
-            "[LOGIN] No se pudo leer el usuario local:",
-            localError.message
-          );
-        }
-      }
-
-      const usuarioSesion = usuarioRemoto || {
+      await persistLogin({
+        token: data.token,
+        expiration: data.expiration,
+        me: usuarioRemoto,
         email: emailLimpio,
-        role: "evaluador"
-      };
-      const rolSesion =
-        usuarioSesion.role ||
-        (Array.isArray(usuarioSesion.roles) ? usuarioSesion.roles[0] : "") ||
-        "evaluador";
+        password
+      });
 
-      saveUserSession({ ...usuarioSesion, email: emailLimpio });
-
-      // Guardamos un hash de la contraseña para poder validar el login offline.
-      try {
-        const passwordHash = await bcrypt.hash(password, 10);
-
-        await window.api.guardarUsuarioLocal({
-          id: usuarioSesion.id || data.user_id || data.id || Date.now(),
-          usuario_id_server:
-            usuarioSesion.usuario_id_server ?? usuarioSesion.id ?? null,
-          email: emailLimpio,
-          role: rolSesion,
-          is_admin: isAdminUser(usuarioSesion),
-          is_superadmin: isSuperadminUser(usuarioSesion),
-          id_organization: usuarioSesion.id_organization ?? null,
-          token: data.token,
-          password_hash: passwordHash
-        });
-
-        console.log("[LOGIN] Token y credenciales offline sincronizados.");
-      } catch (dbError) {
-        console.warn(
-          "[LOGIN] No se pudo guardar el usuario local; el login online continúa:",
-          dbError
-        );
+      console.log("[LOGIN] Token y credenciales offline sincronizados.");
+      if (onLogin) onLogin();
+    } catch (error) {
+      // Credenciales incorrectas: no permitimos el bypass offline.
+      if (error.status === 401 || error.status === 403) {
+        console.error("[LOGIN] Error de credenciales:", error.status);
+        alert("Usuario o contraseña incorrectos en el servidor.");
+        return;
       }
 
-      if (onLogin) onLogin();
+      // Sin red, 5xx o respuesta sin token: validamos localmente.
+      console.warn(
+        `[LOGIN] Servidor no disponible (${error.message}). Probando modo offline...`
+      );
+      await loginOffline(error.message);
     } finally {
       setSubmitting(false);
     }

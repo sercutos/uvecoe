@@ -1,4 +1,5 @@
 import { apiPath } from "./apiConfig";
+import { markServerAuthRequired } from "./auth";
 
 export const fetchWithAuth = async (input, options = {}) => {
   const url = input.startsWith("http") ? input : apiPath(input);
@@ -21,7 +22,9 @@ export const fetchWithAuth = async (input, options = {}) => {
 
   if (response.status === 401) {
     console.error("[API] Error 401: El servidor dice que este token NO es válido o ha expirado.");
-    throw new Error("No autorizado: El token es inválido o ha expirado. Por favor, vuelve al Login.");
+    markServerAuthRequired();
+    window.dispatchEvent(new Event("uvecoe:pending-changed"));
+    throw new Error("No autorizado: El token es inválido o ha expirado. Pulsa 'Reconectar' en la barra superior.");
   }
 
   if (!response.ok) {

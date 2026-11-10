@@ -160,6 +160,11 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
     // Aceptamos token o token_temporal (Login manda "token").
     const tokenLocal =
       usuario.token_temporal ?? usuario.token ?? null;
+    const tokenExpiresAt =
+      typeof usuario.token_expires_at === "string" &&
+      usuario.token_expires_at.length > 0
+        ? usuario.token_expires_at
+        : null;
 
     // Hash de contraseña para el login offline (lo calcula el renderer).
     const passwordHash =
@@ -200,7 +205,10 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
       };
 
       // No borrar el token/hash existente si esta llamada no los trae.
-      if (tokenLocal !== null) cambios.token_temporal = tokenLocal;
+      if (tokenLocal !== null) {
+        cambios.token_temporal = tokenLocal;
+        cambios.token_expires_at = tokenExpiresAt;
+      }
       if (passwordHash !== null) cambios.password_hash = passwordHash;
 
       await db("users").where({ id: usuarioExistente.id }).update(cambios);
@@ -212,6 +220,7 @@ ipcMain.handle('db:guardarUsuarioLocal', async (event, usuario) => {
         email: emailNormalizado,
         role: rol,
         token_temporal: tokenLocal,
+        token_expires_at: tokenExpiresAt,
         password_hash: passwordHash,
         usuario_id_server: idServerValido,
         is_admin: isAdmin,
@@ -518,7 +527,18 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
   if (syncInProgress) {
     return {
       success: false,
+      code: "sync_in_progress",
       error: "Ya hay una sincronización en curso. Espera a que termine."
+    };
+  }
+
+  // La sincronización no debe enviar respuestas sin una sesión de servidor.
+  if (!token) {
+    return {
+      success: false,
+      code: "unauthorized",
+      status: 401,
+      error: "No hay una sesión de servidor válida. Reconecta para sincronizar."
     };
   }
 
@@ -592,9 +612,11 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(
+      const error = new Error(
         `El servidor respondió con código ${response.status}: ${errorText}`
       );
+      error.status = response.status;
+      throw error;
     }
 
     const dataJson = await response.json();
@@ -641,12 +663,23 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
       }
     }
 
-    const message =
-      error.name === "TimeoutError" || error.name === "AbortError"
-        ? "La sincronización tardó más de 30 segundos y se canceló. Se reintentará."
-        : error.message;
+    const isTimeout =
+      error.name === "TimeoutError" || error.name === "AbortError";
+    const message = isTimeout
+      ? "La sincronización tardó más de 30 segundos y se canceló. Se reintentará."
+      : error.message;
 
-    return { success: false, error: message };
+    return {
+      success: false,
+      code:
+        error.status === 401
+          ? "unauthorized"
+          : isTimeout
+            ? "timeout"
+            : "sync_failed",
+      status: error.status ?? null,
+      error: message
+    };
   } finally {
     syncInProgress = false;
   }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, IconButton, Tooltip, Menu, MenuItem, Modal, Typography, Button, Divider, Chip, CircularProgress } from '@mui/material';
+import { Alert, Box, IconButton, Tooltip, Menu, MenuItem, Modal, Typography, Button, Divider, Chip, CircularProgress } from '@mui/material';
 
 // Importación de iconos
 import HomeIcon from '@mui/icons-material/Home';
@@ -12,10 +12,18 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline'; // Icono extra pa
 import InfoIcon from '@mui/icons-material/Info';               // Icono extra para el Acerca de
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
+import CloudOffIcon from '@mui/icons-material/CloudOff';
 
 import { useNavigate, useLocation } from "react-router-dom";
 import { getApiBaseUrl } from "../utils/apiConfig";
-import { isAdminSession } from "../utils/auth";
+import {
+  clearServerAuthRequired,
+  getServerToken,
+  isAdminSession,
+  isServerAuthRequired,
+  markServerAuthRequired
+} from "../utils/auth";
+import ReauthDialog from "./ReauthDialog";
 
 // Estilo base reutilizable para los modales estéticos de MUI
 const modalStyle = {
@@ -46,6 +54,11 @@ export default function Toolbar() {
   // Estado de sincronización local -> servidor
   const [pending, setPending] = useState(0);
   const [syncing, setSyncing] = useState(false);
+  const [needsReauth, setNeedsReauth] = useState(
+    () => isServerAuthRequired() || !getServerToken()
+  );
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [syncError, setSyncError] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -57,38 +70,66 @@ export default function Toolbar() {
         if (active) setPending(Number(count) || 0);
       } catch (error) {
         console.warn("[SYNC] No se pudo contar pendientes:", error);
+      } finally {
+        if (active) {
+          setNeedsReauth(isServerAuthRequired() || !getServerToken());
+        }
       }
     };
+
+    const handleSyncError = (event) => {
+      if (event?.detail) setSyncError(event.detail);
+    };
+    const handleSyncOk = () => setSyncError(null);
 
     refreshPending();
     const interval = setInterval(refreshPending, 10000);
     window.addEventListener("uvecoe:pending-changed", refreshPending);
+    window.addEventListener("uvecoe:sync-error", handleSyncError);
+    window.addEventListener("uvecoe:sync-ok", handleSyncOk);
 
     return () => {
       active = false;
       clearInterval(interval);
       window.removeEventListener("uvecoe:pending-changed", refreshPending);
+      window.removeEventListener("uvecoe:sync-error", handleSyncError);
+      window.removeEventListener("uvecoe:sync-ok", handleSyncOk);
     };
   }, []);
 
-  const handleSyncClick = async () => {
+  const syncNow = async () => {
     if (syncing) return;
 
-    const token = sessionStorage.getItem("token_ecoe");
+    const token = getServerToken();
     if (!token) {
-      navigate("/login");
+      markServerAuthRequired();
+      setNeedsReauth(true);
+      setReauthOpen(true);
       return;
     }
 
     setSyncing(true);
+    setSyncError(null);
 
     try {
       const result = await window.api.sincronizarRespuestas(token);
+
       if (!result?.success) {
-        console.warn("[SYNC]", result?.error || "Sincronización fallida");
+        if (result?.code === "unauthorized" || result?.status === 401) {
+          markServerAuthRequired();
+          setNeedsReauth(true);
+          setSyncError(
+            "La sesión del servidor ha caducado. Reconecta para subir las respuestas."
+          );
+        } else if (result?.code !== "sync_in_progress") {
+          setSyncError(result?.error || "No se pudo sincronizar.");
+        }
+      } else {
+        clearServerAuthRequired();
+        setNeedsReauth(false);
       }
     } catch (error) {
-      console.warn("[SYNC] Error sincronizando:", error);
+      setSyncError(error.message || "No se pudo sincronizar.");
     } finally {
       setSyncing(false);
       try {
@@ -97,7 +138,25 @@ export default function Toolbar() {
       } catch {
         // La siguiente consulta periódica lo actualizará.
       }
+      setNeedsReauth(isServerAuthRequired() || !getServerToken());
     }
+  };
+
+  const handleSyncClick = async () => {
+    if (syncing) return;
+
+    if (needsReauth || !getServerToken()) {
+      setReauthOpen(true);
+      return;
+    }
+
+    await syncNow();
+  };
+
+  const handleReauthSuccess = () => {
+    setSyncError(null);
+    setNeedsReauth(false);
+    syncNow();
   };
 
   // Manejadores del menú desplegable
@@ -127,6 +186,9 @@ export default function Toolbar() {
       "user_is_superadmin",
       "user_org_id",
       "user_org_name",
+      "local_session",
+      "token_expires_at",
+      "sync_auth_required",
       "selected_date_string",
       "selected_round_id",
       "selected_round_code",
@@ -207,9 +269,11 @@ export default function Toolbar() {
         {/* ESTADO DE SINCRONIZACIÓN */}
         <Tooltip
           title={
-            pending > 0
-              ? "Respuestas pendientes. Pulsa para sincronizar."
-              : "Todo sincronizado con el servidor"
+            needsReauth
+              ? "Sesión del servidor no disponible. Pulsa para reconectar."
+              : pending > 0
+                ? "Respuestas pendientes. Pulsa para sincronizar."
+                : "Todo sincronizado con el servidor"
           }
         >
           <Chip
@@ -217,6 +281,8 @@ export default function Toolbar() {
             icon={
               syncing ? (
                 <CircularProgress size={14} color="inherit" />
+              ) : needsReauth ? (
+                <CloudOffIcon />
               ) : pending > 0 ? (
                 <CloudUploadIcon />
               ) : (
@@ -226,12 +292,16 @@ export default function Toolbar() {
             label={
               syncing
                 ? "Sincronizando..."
-                : pending > 0
-                  ? `${pending} pendientes`
-                  : "Al día"
+                : needsReauth
+                  ? pending > 0
+                    ? `${pending} pendientes · Reconectar`
+                    : "Reconectar"
+                  : pending > 0
+                    ? `${pending} pendientes`
+                    : "Al día"
             }
-            color={pending > 0 ? "warning" : "success"}
-            variant={pending > 0 ? "filled" : "outlined"}
+            color={needsReauth ? "error" : pending > 0 ? "warning" : "success"}
+            variant={needsReauth || pending > 0 ? "filled" : "outlined"}
             onClick={handleSyncClick}
             sx={{ mr: 1, cursor: "pointer" }}
           />
@@ -283,6 +353,22 @@ export default function Toolbar() {
           </MenuItem>
         </Menu>
       </Box>
+
+      {syncError && (
+        <Alert
+          severity="warning"
+          onClose={() => setSyncError(null)}
+          sx={{
+            position: "fixed",
+            top: 64,
+            right: 16,
+            zIndex: 1100,
+            maxWidth: 420
+          }}
+        >
+          {syncError}
+        </Alert>
+      )}
 
       {/* ─── MODAL DE AYUDA ─── */}
       <Modal open={openHelp} onClose={() => setOpenHelp(false)}>
@@ -345,6 +431,12 @@ export default function Toolbar() {
           </Button>
         </Box>
       </Modal>
+
+      <ReauthDialog
+        open={reauthOpen}
+        onClose={() => setReauthOpen(false)}
+        onSuccess={handleReauthSuccess}
+      />
     </>
   );
 }

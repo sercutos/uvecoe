@@ -20,8 +20,11 @@ import Grid from "@mui/material/GridLegacy";
 import { getApiBaseUrl } from "../../utils/apiConfig";
 import { fetchStationData } from "../../utils/stationData";
 import {
+  clearServerAuthRequired,
+  getServerToken,
   getSessionOrganizationId,
-  isSuperadminSession
+  isSuperadminSession,
+  markServerAuthRequired
 } from "../../utils/auth";
 
 export default function Settings() {
@@ -87,7 +90,17 @@ export default function Settings() {
   useEffect(() => {
     async function fetchEcoes() {
       try {
-        const token = sessionStorage.getItem("token_ecoe");
+        const token = getServerToken();
+        if (!token) {
+          markServerAuthRequired();
+          window.dispatchEvent(new Event("uvecoe:pending-changed"));
+          setEcoes([]);
+          setDownloadStatus(
+            "❌ La sesión del servidor ha caducado. Reconecta en la barra superior."
+          );
+          return;
+        }
+
         const response = await fetch(`${getApiBaseUrl()}/backend/api/v1/ecoes`, {
           method: "GET",
           headers: {
@@ -95,7 +108,11 @@ export default function Settings() {
             "Authorization": `Bearer ${token}`
           }
         });
-        if (!response.ok) throw new Error("No autorizado");
+        if (!response.ok) {
+          const error = new Error("No autorizado");
+          error.status = response.status;
+          throw error;
+        }
         const data = await response.json();
         const lista = Array.isArray(data) ? data : [];
         const isSuperadmin = isSuperadminSession();
@@ -118,6 +135,10 @@ export default function Settings() {
         );
       } catch (error) {
         console.error("Error cargando ECOEs:", error);
+        if (error.status === 401) {
+          markServerAuthRequired();
+          window.dispatchEvent(new Event("uvecoe:pending-changed"));
+        }
         setEcoes([]);
         setDownloadStatus("❌ No autorizado. Inicie sesión en el servidor primero.");
       }
@@ -133,7 +154,17 @@ export default function Settings() {
     }
     async function fetchStations() {
       try {
-        const token = sessionStorage.getItem("token_ecoe");
+        const token = getServerToken();
+        if (!token) {
+          markServerAuthRequired();
+          window.dispatchEvent(new Event("uvecoe:pending-changed"));
+          setStations([]);
+          setDownloadStatus(
+            "❌ La sesión del servidor ha caducado. Reconecta en la barra superior."
+          );
+          return;
+        }
+
         const response = await fetch(
           `${getApiBaseUrl()}/backend/api/v1/stations?ecoe_id=${selectedEcoe}`,
           {
@@ -144,7 +175,11 @@ export default function Settings() {
             }
           }
         );
-        if (!response.ok) throw new Error("No autorizado");
+        if (!response.ok) {
+          const error = new Error("No autorizado");
+          error.status = response.status;
+          throw error;
+        }
         const data = await response.json();
         if (data && Array.isArray(data.items)) {
           setStations(data.items);
@@ -155,6 +190,10 @@ export default function Settings() {
         }
       } catch (error) {
         console.error("Error cargando estaciones:", error);
+        if (error.status === 401) {
+          markServerAuthRequired();
+          window.dispatchEvent(new Event("uvecoe:pending-changed"));
+        }
         setStations([]);
         setDownloadStatus("❌ Error al cargar las estaciones.");
       }
@@ -188,15 +227,28 @@ export default function Settings() {
         throw new Error("API de Electron no disponible");
       }
 
-      const token = sessionStorage.getItem("token_ecoe");
+      const token = getServerToken();
+      if (!token) {
+        markServerAuthRequired();
+        throw new Error(
+          "La sesión del servidor ha caducado. Usa 'Reconectar' en la barra superior."
+        );
+      }
+
       const res = await window.api.sincronizarRespuestas(token);
 
       if (res.success) {
+        clearServerAuthRequired();
         setAlertInfo({
           show: true,
           severity: "success",
           msg: res.count > 0 ? res.message : "Todo al día: No había datos nuevos que subir."
         });
+      } else if (res.code === "unauthorized" || res.status === 401) {
+        markServerAuthRequired();
+        throw new Error(
+          "La sesión del servidor ha caducado. Usa 'Reconectar' en la barra superior."
+        );
       } else {
         throw new Error(res.error || "Fallo desconocido al subir");
       }
@@ -241,6 +293,20 @@ export default function Settings() {
         show: true,
         severity: "error",
         msg: "No tiene permiso para descargar esta ECOE."
+      });
+      return;
+    }
+
+    if (!getServerToken()) {
+      markServerAuthRequired();
+      window.dispatchEvent(new Event("uvecoe:pending-changed"));
+      setDownloadStatus(
+        "❌ La sesión del servidor ha caducado. Reconecta en la barra superior."
+      );
+      setAlertInfo({
+        show: true,
+        severity: "error",
+        msg: "Reconecta con el servidor antes de descargar datos."
       });
       return;
     }
@@ -299,6 +365,14 @@ export default function Settings() {
       });
     } catch (error) {
       console.error("Error en la descarga:", error);
+      if (
+        error.status === 401 ||
+        (typeof error.message === "string" &&
+          error.message.startsWith("No autorizado"))
+      ) {
+        markServerAuthRequired();
+        window.dispatchEvent(new Event("uvecoe:pending-changed"));
+      }
       setDownloadStatus(
         `❌ Error crítico durante la descarga: ${error.message}`
       );

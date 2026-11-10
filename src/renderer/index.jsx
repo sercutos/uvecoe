@@ -24,7 +24,7 @@ import {
 } from "@mui/material";
 
 import { initApiConfig } from "./utils/apiConfig";
-import { isAdminSession } from "./utils/auth";
+import { isAdminSession, isLocalSession } from "./utils/auth";
 
 const theme = createTheme({
   palette: {
@@ -37,13 +37,12 @@ const theme = createTheme({
 const Router = window.location.protocol === "file:" ? HashRouter : BrowserRouter;
 
 function PrivateRoute({ children }) {
-  const hasToken = sessionStorage.getItem("token_ecoe") !== null;
-  return hasToken ? children : <Navigate to="/login" />;
+  return isLocalSession() ? children : <Navigate to="/login" />;
 }
 
 // Settings solo para superadmin de la plataforma o admin de organización.
 function AdminRoute({ children }) {
-  if (sessionStorage.getItem("token_ecoe") === null) {
+  if (!isLocalSession()) {
     return <Navigate to="/login" />;
   }
 

@@ -15,13 +15,13 @@ import CloudDoneIcon from "@mui/icons-material/CloudDone";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import LockIcon from "@mui/icons-material/Lock";
-import bcrypt from "bcryptjs";
 
 import logoImg from "../../../../assets/images/logo1.png";
 import {
+  fetchCurrentUser,
   isAdminUser,
-  isSuperadminUser,
-  saveUserSession
+  loginOnline,
+  persistLogin
 } from "../../utils/auth";
 
 function normalizeBaseUrl(value) {
@@ -155,66 +155,26 @@ export default function FirstRunSetup({ onComplete }) {
         return;
       }
 
-      const loginResponse = await fetch(`${base}/backend/auth/tokens`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailLimpio, password })
-      });
-
-      if (loginResponse.status === 401 || loginResponse.status === 403) {
-        throw new Error("Usuario o contraseña incorrectos en el servidor.");
-      }
-
-      if (!loginResponse.ok) {
-        throw new Error(
-          `El servidor respondió HTTP ${loginResponse.status} al iniciar sesión.`
-        );
-      }
-
-      const loginData = await loginResponse.json();
-
-      if (!loginData.token) {
-        throw new Error("El servidor no devolvió un token.");
-      }
-
-      const meResponse = await fetch(`${base}/backend/api/v1/users/me`, {
-        headers: { Authorization: `Bearer ${loginData.token}` }
-      });
-
-      if (!meResponse.ok) {
-        throw new Error(
-          `No se pudo validar el usuario (HTTP ${meResponse.status}).`
-        );
-      }
-
-      const me = await meResponse.json();
-      const roles = Array.isArray(me.roles) ? me.roles : [];
+      const loginData = await loginOnline(emailLimpio, password, base);
+      const me = await fetchCurrentUser(loginData.token, base);
 
       if (!isAdminUser(me)) {
         throw new Error("El usuario no tiene permisos de administrador.");
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
       const emailFinal = me.email || emailLimpio;
-      const isSuperadmin = isSuperadminUser(me);
 
       await window.api.setSetting("api_base_url", base);
       sessionStorage.setItem("api_base_url", base);
 
-      await window.api.guardarUsuarioLocal({
-        id: me.id,
-        usuario_id_server: me.id,
-        email: emailFinal,
-        role: roles[0] || "administrator",
-        is_admin: true,
-        is_superadmin: isSuperadmin,
-        id_organization: me.id_organization ?? null,
+      await persistLogin({
         token: loginData.token,
-        password_hash: passwordHash
+        expiration: loginData.expiration,
+        me,
+        email: emailFinal,
+        password
       });
 
-      sessionStorage.setItem("token_ecoe", loginData.token);
-      saveUserSession({ ...me, email: emailFinal });
       await window.api.setSetting("setup_completed", "true");
 
       setFeedback({

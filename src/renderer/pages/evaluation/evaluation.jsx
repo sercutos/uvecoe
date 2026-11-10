@@ -11,6 +11,12 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 import { useNavigate } from "react-router-dom";
 import { fetchWithAuth } from "../../utils/api"; 
+import {
+  clearServerAuthRequired,
+  getServerToken,
+  isServerAuthRequired,
+  markServerAuthRequired
+} from "../../utils/auth";
 
 // Rotación de los alumnos de un planner por estación.
 // Los alumnos llegan ordenados por planner_order 1..N.
@@ -56,9 +62,15 @@ export default function EvaluationPage() {
   // si falla (sin WiFi), las respuestas quedan pendientes y se reintenta.
   const runAutoSync = async () => {
     if (autoSyncRef.current) return;
+    if (!window.api?.sincronizarRespuestas) return;
+    if (isServerAuthRequired()) return;
 
-    const token = sessionStorage.getItem("token_ecoe");
-    if (!token || !window.api?.sincronizarRespuestas) return;
+    const token = getServerToken();
+    if (!token) {
+      markServerAuthRequired();
+      window.dispatchEvent(new Event("uvecoe:pending-changed"));
+      return;
+    }
 
     autoSyncRef.current = true;
 
@@ -66,12 +78,25 @@ export default function EvaluationPage() {
       const result = await window.api.sincronizarRespuestas(token);
 
       if (result?.success) {
+        clearServerAuthRequired();
+        window.dispatchEvent(new Event("uvecoe:pending-changed"));
+        window.dispatchEvent(new Event("uvecoe:sync-ok"));
+      } else if (result?.code === "unauthorized" || result?.status === 401) {
+        markServerAuthRequired();
         window.dispatchEvent(new Event("uvecoe:pending-changed"));
       } else if (result?.error) {
         console.warn("[AUTO-SYNC]", result.error);
+        window.dispatchEvent(
+          new CustomEvent("uvecoe:sync-error", { detail: result.error })
+        );
       }
     } catch (syncError) {
       console.warn("[AUTO-SYNC] No se pudo sincronizar:", syncError);
+      window.dispatchEvent(
+        new CustomEvent("uvecoe:sync-error", {
+          detail: syncError.message || "No se pudo sincronizar."
+        })
+      );
     } finally {
       autoSyncRef.current = false;
     }
