@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { randomUUID } = require("crypto");
@@ -97,6 +97,33 @@ app.whenReady().then(async () => {
     //console.log("📦 ESTRUCTURA QUESTIONS:", cols);
   } catch (error) {
     console.error("[ERROR MIGRACIONES INTERNAS]:", error);
+
+    // Guardamos una copia antes de cerrar para no perder el estado roto.
+    let backupPath = null;
+    try {
+      if (fs.existsSync(dbPath)) {
+        const candidate = `${dbPath}.failed-${Date.now()}`;
+        fs.copyFileSync(dbPath, candidate, fs.constants.COPYFILE_EXCL);
+        backupPath = candidate;
+        console.error("[DB] Copia de la base con error:", backupPath);
+      }
+    } catch (backupError) {
+      console.error("[DB] No se pudo copiar la base con error:", backupError);
+    }
+
+    const backupMessage = backupPath
+      ? `\n\nSe guardó una copia de la base en:\n${backupPath}`
+      : "";
+
+    dialog.showErrorBox(
+      "No se pudo preparar la base de datos",
+      "La aplicación no puede continuar porque falló la actualización de la base de datos local." +
+        `\n\n${error?.message || error}${backupMessage}` +
+        "\n\nLa aplicación se cerrará. Revisa el espacio en disco o pide ayuda a un administrador."
+    );
+
+    app.quit();
+    return;
   }
 
   // Una vez revisada la DB, lanzamos el flujo visual (Splash -> Main)

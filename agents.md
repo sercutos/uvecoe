@@ -424,6 +424,8 @@ No queda ningún P0 funcional abierto.
 - Firma Authenticode del instalador y del `.exe` con certificado interno; timestamp RFC3161.
   El certificado debe confiarse en cada portátil (Root + TrustedPublisher).
 - `init.js` se mantiene como migración no-op `async` por compatibilidad con DBs antiguas.
+- Si fallan las migraciones, la app guarda una copia `*.failed-<timestamp>` de la base, muestra
+  un error y se cierra; no abre una ventana con tablas incompletas.
 
 ### P1 — robustez y calidad
 
