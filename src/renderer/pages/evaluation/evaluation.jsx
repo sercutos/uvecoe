@@ -44,7 +44,7 @@ export default function EvaluationPage() {
   // --- ESTADOS DE DATOS Y CARGA ---
   const [students, setStudents] = useState([]);
   const [questions, setQuestions] = useState([]); 
-  const [answers, setAnswers] = useState([]);     
+  const [answersByStudent, setAnswersByStudent] = useState({});
   const [stationName, setStationName] = useState("Cargando Estación..."); 
   
   const [loading, setLoading] = useState(true);
@@ -54,6 +54,8 @@ export default function EvaluationPage() {
   const autoSyncRef = useRef(false);
   
   const currentStudent = students[currentStudentIndex] || null;
+  const currentAnswers =
+    (currentStudent && answersByStudent[currentStudent.id_estudiante]) || {};
 
   const shiftCodeVisual = sessionStorage.getItem("selected_shift_code") || "-";
   const roundCodeVisual = sessionStorage.getItem("selected_round_code") || "-";
@@ -363,7 +365,6 @@ export default function EvaluationPage() {
 
         setStudents(reorderedStudents);
         setQuestions(mappedQuestions);
-        setAnswers(mappedQuestions.map(() => false)); // valor respuesta por defecto
 
       } catch (err) {
         console.error("[ERROR EVALUACIÓN GLOBAL]:", err);
@@ -379,37 +380,55 @@ export default function EvaluationPage() {
 
   // --- Recuperar las respuestas del alumno de SQLite al cambiar de alumno o iniciar la pantalla
   useEffect(() => {
-    const cargarRespuestasGuardadas = async () => {
-      if (!currentStudent || questions.length === 0) return;
+    if (!currentStudent || questions.length === 0) return;
 
+    const studentId = currentStudent.id_estudiante;
+    let active = true;
+
+    const cargarRespuestasGuardadas = async () => {
       try {
         const configLocal = await window.api.obtenerConfiguracion();
         const id_station = configLocal?.station_id || 1;
 
         // 1. Pedimos a SQLite las respuestas que ya existan para este alumno en esta estación
         const respuestasGuardadas = await window.api.invoke("db:obtener-respuestas-alumno", {
-          id_student: currentStudent.id_estudiante,
+          id_student: studentId,
           id_station: Number(id_station)
         });
 
-        // 2. Creamos el array de estados mapeando contra nuestras preguntas en pantalla
-        // Cualquier puntuación mayor que 0 (1, 0.5...) significa switch activo.
-        const nuevosSwitches = questions.map((q) => {
-          const registroGuardado = respuestasGuardadas.find(r => r.id_question === q.id_pregunta_db);
-          return registroGuardado ? Number(registroGuardado.points) > 0 : false;
-        });
+        if (!active) return;
 
-        setAnswers(nuevosSwitches);
+        // 2. Guardamos las respuestas bajo el id del alumno. Así una lectura
+        // tardía del alumno anterior nunca cae en el alumno siguiente.
+        const guardadas = {};
+        for (const respuesta of respuestasGuardadas) {
+          guardadas[respuesta.id_question] = Number(respuesta.points) > 0;
+        }
 
+        setAnswersByStudent((prev) => ({
+          ...prev,
+          [studentId]: {
+            ...guardadas,
+            // Si el evaluador ya tocó un switch mientras se leía, mandan sus datos.
+            ...(prev[studentId] || {})
+          }
+        }));
       } catch (err) {
         console.error("Error al recuperar el progreso del alumno de SQLite:", err);
-        // Fallback: si falla o no hay nada, por defecto todo a false (a cero)
-        setAnswers(questions.map(() => false));
+        if (!active) return;
+        setAnswersByStudent((prev) => ({
+          ...prev,
+          [studentId]: prev[studentId] || {}
+        }));
       }
     };
 
     cargarRespuestasGuardadas();
-  }, [currentStudentIndex, currentStudent, questions]); // 🚀 Se dispara al cambiar de alumno o cargar preguntas
+
+    return () => {
+      active = false;
+    };
+  }, [currentStudent, questions]); // 🚀 Se dispara al cambiar de alumno o cargar preguntas
   // --- CONTROL DEL TECLADO ---
   useEffect(() => {
     const manejarTeclado = (event) => {
@@ -428,24 +447,31 @@ export default function EvaluationPage() {
 
     window.addEventListener("keydown", manejarTeclado);
     return () => window.removeEventListener("keydown", manejarTeclado);
-  }, [currentStudentIndex, students, answers, questions]);
+  }, [currentStudentIndex, students, answersByStudent, questions]);
   
     // ==========================================
   // 🚀 GUARDADO INMEDIATO POR CADA SWITCH (ULTRA SEGURO)
   // ==========================================
-  const handleToggle = async (index) => {
+  const handleToggle = async (q) => {
     if (!currentStudent) return;
 
-    const previousValue = Boolean(answers[index]);
+    const studentId = currentStudent.id_estudiante;
+    const questionId = q.id_pregunta_db;
+    const previousValue = Boolean(
+      answersByStudent[studentId]?.[questionId]
+    );
     const nuevoValorSwitch = !previousValue;
 
-    // Actualizamos la UI al instante para que no tenga lag.
-    const newAnswers = [...answers];
-    newAnswers[index] = nuevoValorSwitch;
-    setAnswers(newAnswers);
+    // Actualizamos solo la respuesta de este alumno y esta pregunta.
+    setAnswersByStudent((prev) => ({
+      ...prev,
+      [studentId]: {
+        ...(prev[studentId] || {}),
+        [questionId]: nuevoValorSwitch
+      }
+    }));
     setSaveError(null);
 
-    const q = questions[index];
     const configLocal = await window.api.obtenerConfiguracion();
     const id_station = configLocal?.station_id || 1;
 
@@ -467,20 +493,26 @@ export default function EvaluationPage() {
     };
 
     const loteFilaUnica = [{
-      id_student: currentStudent.id_estudiante,
-      id_question: q.id_pregunta_db,
+      id_student: studentId,
+      id_question: questionId,
       id_station: Number(id_station),
       points,
       answer_schema: JSON.stringify(schema),
       sincronizado: false
     }];
 
+    const revertir = () => {
+      setAnswersByStudent((prev) => ({
+        ...prev,
+        [studentId]: {
+          ...(prev[studentId] || {}),
+          [questionId]: previousValue
+        }
+      }));
+    };
+
     if (!window.api?.invoke) {
-      setAnswers((prev) => {
-        const reverted = [...prev];
-        reverted[index] = previousValue;
-        return reverted;
-      });
+      revertir();
       setSaveError(
         "No se pudo guardar la respuesta: falta el puente de Electron."
       );
@@ -497,11 +529,7 @@ export default function EvaluationPage() {
     } catch (errDb) {
       // Si SQLite rechaza la escritura, devolvemos el switch a su estado
       // anterior para que el evaluador no vea una respuesta falsamente guardada.
-      setAnswers((prev) => {
-        const reverted = [...prev];
-        reverted[index] = previousValue;
-        return reverted;
-      });
+      revertir();
       setSaveError(
         `No se pudo guardar la respuesta de "${q.id}". ` +
           "Revisa la base de datos local y vuelve a intentarlo."
@@ -689,9 +717,13 @@ export default function EvaluationPage() {
                   <FormControlLabel
                     sx={{ minWidth: "80px", m: 0 }}
                     control={
-                      <Switch checked={answers[index] || false} onChange={() => handleToggle(index)} color="primary" />
+                      <Switch
+                        checked={Boolean(currentAnswers[question.id_pregunta_db])}
+                        onChange={() => handleToggle(question)}
+                        color="primary"
+                      />
                     }
-                    label={answers[index] ? "Sí" : "No"}
+                    label={currentAnswers[question.id_pregunta_db] ? "Sí" : "No"}
                   />
                 </Box>
               </Grid>

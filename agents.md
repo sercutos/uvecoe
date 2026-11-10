@@ -412,6 +412,8 @@ No queda ningún P0 funcional abierto.
 - Sincronización con Bearer token, timeout de 30 s por lote y validación de `inserted_or_updated`.
 - Timeout de 10 s en las peticiones del renderer (`fetchWithAuth`, Settings y AdminConfig) para
   caer a SQLite en vez de quedarse cargando indefinidamente.
+- Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
+  alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
   (al entrar, cada 5 min y al pasar de alumno). Bloqueo para evitar sync simultáneas.
 - Soft-delete de preguntas/alumnos obsoletos con `active`; resultados históricos conservados.
