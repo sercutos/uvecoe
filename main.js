@@ -12,6 +12,10 @@ let splashWindow;
 let db;
 let syncInProgress = false;
 
+// La sincronización solo envía respuestas. 500 filas mantienen cada POST
+// pequeño incluso después de un día entero sin red.
+const SYNC_BATCH_SIZE = 500;
+
 function getDbPath() {
   if (app.isPackaged) {
     return path.join(app.getPath("userData"), "uvecoe.db");
@@ -496,51 +500,10 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
   }
 
   syncInProgress = true;
+  let totalSincronizados = 0;
   let batchId = null;
 
   try {
-    // 1. Reclamamos el lote: marcamos las pendientes y leemos solo esas filas.
-    // Cualquier escritura nueva limpia sync_batch, así no se marca como subida.
-    batchId = randomUUID();
-    const registrosPendientes = await db.transaction(async (trx) => {
-      await trx("resultados")
-        .where({ sincronizado: false })
-        .update({ sync_batch: batchId });
-
-      return trx("resultados")
-        .where({ sync_batch: batchId })
-        .select("*");
-    });
-
-    if (registrosPendientes.length === 0) {
-      return { success: true, message: "No hay respuestas pendientes de sincronizar.", count: 0 };
-    }
-
-    // 2. Mapeamos los datos al formato exacto que te está pidiendo el Swagger
-    const payloadParaFastAPI = registrosPendientes.map(row => {
-      let schemaParseado = {};
-      try {
-        // Como en SQLite lo guardamos con JSON.stringify(), lo volvemos a convertir a objeto JSON real
-        schemaParseado = typeof row.answer_schema === 'string' 
-          ? JSON.parse(row.answer_schema) 
-          : row.answer_schema;
-      } catch (e) {
-        console.error("Error al parsear answer_schema de la fila", row.id, e);
-        schemaParseado = { type: "checkbox", selected: [] }; // Fallback de seguridad
-      }
-
-      return {
-        id_student: Number(row.id_student),
-        id_question: Number(row.id_question),
-        id_station: Number(row.id_station),
-        points: Number(row.points),
-        answer_schema: schemaParseado // 🚀 Aquí entra como el objeto que pide Swagger
-      };
-    });
-
-    console.log(`📡 Enviando un lote masivo de ${payloadParaFastAPI.length} respuestas a FastAPI...`);
-
-    // 3. Enviamos el lote mediante un único POST HTTP masivo.
     const apiBase = await settings.getApiBaseUrl();
     const headers = { "Content-Type": "application/json" };
 
@@ -548,58 +511,125 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const signal =
-      typeof AbortSignal.timeout === "function"
-        ? AbortSignal.timeout(30000)
-        : undefined;
+    while (true) {
+      // 1. Reclamamos solo un lote. Cualquier escritura nueva limpia
+      // sync_batch y esa fila no se marca como subida.
+      batchId = randomUUID();
 
-    const response = await fetch(
-      `${apiBase}/backend/api/v1/answers/bulk-sync`,
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payloadParaFastAPI),
-        ...(signal ? { signal } : {})
+      const registrosPendientes = await db.transaction(async (trx) => {
+        const pendientes = await trx("resultados")
+          .where({ sincronizado: false })
+          .orderBy("id", "asc")
+          .limit(SYNC_BATCH_SIZE)
+          .select("*");
+
+        if (pendientes.length === 0) return [];
+
+        await trx("resultados")
+          .whereIn(
+            "id",
+            pendientes.map((row) => row.id)
+          )
+          .update({ sync_batch: batchId });
+
+        return pendientes;
+      });
+
+      if (registrosPendientes.length === 0) break;
+
+      // 2. Solo enviamos respuestas. Alumnos, turnos y preguntas no se suben.
+      const payloadParaFastAPI = registrosPendientes.map(row => {
+        let schemaParseado = {};
+        try {
+          // Como en SQLite lo guardamos con JSON.stringify(), lo volvemos a convertir a objeto JSON real
+          schemaParseado = typeof row.answer_schema === 'string' 
+            ? JSON.parse(row.answer_schema) 
+            : row.answer_schema;
+        } catch (e) {
+          console.error("Error al parsear answer_schema de la fila", row.id, e);
+          schemaParseado = { type: "checkbox", selected: [] }; // Fallback de seguridad
+        }
+
+        return {
+          id_student: Number(row.id_student),
+          id_question: Number(row.id_question),
+          id_station: Number(row.id_station),
+          points: Number(row.points),
+          answer_schema: schemaParseado // 🚀 Aquí entra como el objeto que pide Swagger
+        };
+      });
+
+      console.log(
+        `📡 Enviando lote de ${payloadParaFastAPI.length} respuestas ` +
+          `(${totalSincronizados + payloadParaFastAPI.length} de este envío)...`
+      );
+
+      // 3. Timeout por lote, no para todo el atraso.
+      const signal =
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(30000)
+          : undefined;
+
+      const response = await fetch(
+        `${apiBase}/backend/api/v1/answers/bulk-sync`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payloadParaFastAPI),
+          ...(signal ? { signal } : {})
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = new Error(
+          `El servidor respondió con código ${response.status}: ${errorText}`
+        );
+        error.status = response.status;
+        throw error;
       }
-    );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      const error = new Error(
-        `El servidor respondió con código ${response.status}: ${errorText}`
-      );
-      error.status = response.status;
-      throw error;
+      const dataJson = await response.json();
+
+      // 4. Solo marcamos como sincronizado si el servidor confirma TODO el lote.
+      const esperados = payloadParaFastAPI.length;
+      const procesados = Number(dataJson.inserted_or_updated);
+
+      if (!Number.isFinite(procesados) || procesados < esperados) {
+        throw new Error(
+          `El servidor confirmó ${dataJson?.inserted_or_updated ?? 0} de ${esperados} respuestas. ` +
+            "No se marcarán como sincronizadas y se reintentará el envío."
+        );
+      }
+
+      // Solo se marcan las filas que siguen en este lote. Si el evaluador
+      // cambió una respuesta durante el envío, su upsert ya limpió sync_batch.
+      await db("resultados")
+        .where({ sync_batch: batchId })
+        .update({ sincronizado: true, sync_batch: null });
+
+      totalSincronizados += procesados;
+
+      // Si el lote vino incompleto, ya no quedan más pendientes.
+      if (registrosPendientes.length < SYNC_BATCH_SIZE) break;
     }
 
-    const dataJson = await response.json();
-    console.log("🎉 Servidor FastAPI respondió con éxito:", dataJson);
-
-    // 4. Solo marcamos como sincronizado si el servidor confirma TODO el lote.
-    const esperados = payloadParaFastAPI.length;
-    const procesados = Number(dataJson.inserted_or_updated);
-
-    if (!Number.isFinite(procesados) || procesados < esperados) {
-      throw new Error(
-        `El servidor confirmó ${dataJson?.inserted_or_updated ?? 0} de ${esperados} respuestas. ` +
-          "No se marcarán como sincronizadas y se reintentará el envío."
-      );
+    if (totalSincronizados === 0) {
+      return {
+        success: true,
+        message: "No hay respuestas pendientes de sincronizar.",
+        count: 0
+      };
     }
-
-    // Solo se marcan las filas que siguen en este lote. Si el evaluador cambió
-    // una respuesta durante el envío, su upsert ya limpió sync_batch.
-    await db("resultados")
-      .where({ sync_batch: batchId })
-      .update({ sincronizado: true, sync_batch: null });
 
     return {
       success: true,
-      message: `¡Sincronización masiva exitosa! ${procesados} registros subidos.`,
-      count: procesados
+      message: `¡Sincronización completada! ${totalSincronizados} registros subidos.`,
+      count: totalSincronizados
     };
   } catch (error) {
     console.error(
-      "❌ Fallo crítico en el proceso de sincronización masiva:",
+      "❌ Fallo crítico en el proceso de sincronización:",
       error
     );
 
@@ -619,8 +649,12 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
     const isTimeout =
       error.name === "TimeoutError" || error.name === "AbortError";
     const message = isTimeout
-      ? "La sincronización tardó más de 30 segundos y se canceló. Se reintentará."
+      ? "Un lote de sincronización tardó más de 30 segundos y se canceló. Se reintentará."
       : error.message;
+    const progreso =
+      totalSincronizados > 0
+        ? `Se subieron ${totalSincronizados} respuestas antes del error. `
+        : "";
 
     return {
       success: false,
@@ -631,7 +665,8 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
             ? "timeout"
             : "sync_failed",
       status: error.status ?? null,
-      error: message
+      count: totalSincronizados,
+      error: progreso + message
     };
   } finally {
     syncInProgress = false;

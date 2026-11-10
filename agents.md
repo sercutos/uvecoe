@@ -330,11 +330,13 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
     el siguiente Login.
 13. **Sincronización:** el Toolbar muestra `N pendientes` / `Al día` y permite sincronizar al
     pulsar. La evaluación intenta auto-sync al entrar, cada 5 minutos y al pasar de alumno; es
-    silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan. El lote
-    en vuelo se marca con `sync_batch`; si el evaluador cambia una respuesta durante el envío, el
-    `upsert` limpia esa marca y la fila no se da por sincronizada. Si el servidor responde 401,
-    no se cierra la sesión ni se navega a `/login`: se marca `sync_auth_required`, se borra solo
-    el token y el Toolbar ofrece reconectar sin interrumpir la evaluación.
+    silenciosa y no bloquea. Solo se envían respuestas (nunca alumnos, turnos ni preguntas), en
+    lotes de 500 filas con timeout de 30 s por lote. Si falla, los lotes anteriores quedan
+    sincronizados, las respuestas restantes quedan pendientes y se reintentan. Cada lote en vuelo
+    se marca con `sync_batch`; si el evaluador cambia una respuesta durante el envío, el `upsert`
+    limpia esa marca y la fila no se da por sincronizada. Si el servidor responde 401, no se
+    cierra la sesión ni se navega a `/login`: se marca `sync_auth_required`, se borra solo el
+    token y el Toolbar ofrece reconectar sin interrumpir la evaluación.
 14. **Primer arranque:** una DB nueva (`setup_completed=false`) muestra el asistente antes del
     Login. Exige probar `/backend/status`, autenticar un admin y validar `/users/me`
     (`is_superadmin` o rol `administrator`). Si falla, no se puede continuar. Las DBs ya
