@@ -403,20 +403,9 @@ ipcMain.handle('db:obtener-preguntas', async (event, params = {}) => {
         schema = {};
       }
 
-      const fromOptions =
-        Array.isArray(schema.options) && schema.options.length > 0
-          ? Number(schema.options[0].points)
-          : null;
-      const storedMaxPoints = Number(row.max_points);
-      const maxPoints =
-        Number.isFinite(storedMaxPoints) && storedMaxPoints > 0
-          ? storedMaxPoints
-          : fromOptions ?? 0;
-
       return {
         id: row.id,
         order: row.order,
-        max_points: Number.isFinite(maxPoints) ? maxPoints : 0,
         question_schema: {
           ...schema,
           reference: schema.reference ?? row.reference,

@@ -191,7 +191,7 @@ Ruta de la DB:
 | `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id`, `station_order` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
 | `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `token_expires_at`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
-| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `max_points`, `active` | `question_schema` incluye `type` y `options[].points`; `max_points` se rellena desde la rúbrica publicada; `active=false` si la pregunta ya no se publica |
+| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `active` | `question_schema` incluye `type` y `options[].points`; los puntos se leen de `options[0].points`; `active=false` si la pregunta ya no se publica |
 | `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `sync_batch`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert`; `sync_batch` marca el lote en vuelo y cualquier escritura nueva lo limpia |
 | `settings` | `key` (PK), `value` | `api_base_url` |
 | `shifts` | `id`, `id_ecoe`, `shift_code`, `time_start` | Turnos descargados para seleccionar fecha/turno offline |
@@ -271,7 +271,7 @@ Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígene
 | `GET /rounds?ecoe_id=` | Array | |
 | `GET /planners?shift_id=&round_id=` | Array | |
 | `GET /blocks?station_id=` | `{ items, ... }` | |
-| `GET /questions?station_id=&block_id=` | Array | Cada pregunta trae `question_schema` y `area.name`; hay `max_points` de `0.5` |
+| `GET /questions?station_id=&block_id=` | Array | Cada pregunta trae `question_schema` y `area.name`; los puntos están en `options[].points` (0.5, 1...) |
 | `GET /students?ecoe_id=&planner_id=` | `{ items, total, ... }` | **El parámetro es `ecoe_id`, NO `id_ecoe`** |
 | `GET /users` | Array | Requiere Bearer |
 | `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | La app exige token de sesión antes de llamarlo |
@@ -322,9 +322,9 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
    volver a introducir borrados masivos. La descarga también importa las respuestas del servidor
    (`GET /answers/station/{station_id}`) como `sincronizado = true`, pero **no pisa** las respuestas
    locales con `sincronizado = false` (pendientes de subir).
-5. **Puntos reales:** `points` y `answer_schema` se calculan desde `max_points` y
-   `question_schema.options` publicados por el servidor. No hardcodear `1` ni `id_option: 1`.
-   Una respuesta con puntos `> 0` (por ejemplo `0.5`) se muestra como switch activo.
+5. **Puntos reales:** `points` y `answer_schema` se calculan desde
+   `question_schema.options[0].points` publicado por el servidor. No hardcodear `1` ni
+   `id_option: 1`. Una respuesta con puntos `> 0` (por ejemplo `0.5`) se muestra como switch activo.
 6. **Configuración atómica:** descargar y validar todo (bloque, preguntas, 276 alumnos,
    planificación y usuarios) antes de guardar `configuracion`, y hacerlo en una transacción.
 7. **Los IDs locales son IDs del servidor.** No generar IDs ficticios para resultados que luego
@@ -424,7 +424,7 @@ No queda ningún P0 funcional abierto.
 
 ### Resuelto en P1 (2026-11-07)
 
-- `max_points` y `options[].points` se leen del servidor; migración corrige resultados antiguos.
+- Los puntos se leen de `options[].points`; la migración histórica corrigió resultados antiguos.
 - `AnswerBulkItem.points` del backend pasa de `int` a `float` (archivo externo
   `/home/scubero/openECOE-FASTAPI/backend/app/schemas/answer.py`).
 - Sincronización con Bearer token, timeout de 30 s por lote y validación de `inserted_or_updated`.
@@ -440,6 +440,7 @@ No queda ningún P0 funcional abierto.
   `queries.guardarUsuarioLocal`.
 - Un solo gestor de paquetes: npm. Eliminados `yarn.lock`, `electronmon` y el paquete
   duplicado `electron-rebuild`; se mantiene `@electron/rebuild` (mismo binario).
+- Eliminado `questions.max_points`: los puntos se leen de `question_schema.options[0].points`.
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
@@ -536,7 +537,7 @@ Checklist funcional:
 - ECOE de prueba: `ECOE1` (id 1), estaciones 13-24, turnos T1-T23, ronda R1 (id 11).
 - `data/uvecoe.db`: `settings` con `api_base_url = http://localhost:8000`, configuración de la
   Estación 1 (`station_order = 1`), 276 alumnos activos, 30 preguntas activas con
-  `max_points` (1 o 0.5), 13 usuarios (0 con `password_hash` hasta el primer login online),
+  `options[].points` (1 o 0.5), 13 usuarios (0 con `password_hash` hasta el primer login online),
   23 turnos, 1 ronda, 23 planners y 5 resultados corregidos (0.5 donde corresponde).
   Índices `resultados_unique_student_question_station`, `resultados_sincronizado_idx`,
   `questions_active_station_idx` y `students_active_planner_idx`.

@@ -19,7 +19,6 @@ import {
 } from "../../utils/auth";
 import {
   pointsForToggle,
-  questionMaxPoints,
   reorderStudentsForStation
 } from "../../utils/scoring.mjs";
 import useChrono from "../../hooks/useChrono";
@@ -342,8 +341,7 @@ export default function EvaluationPage() {
             type: q.question_schema?.type || "checkbox",
             options: Array.isArray(q.question_schema?.options)
               ? q.question_schema.options
-              : [],
-            max_points: questionMaxPoints(q)
+              : []
           };
         });
 

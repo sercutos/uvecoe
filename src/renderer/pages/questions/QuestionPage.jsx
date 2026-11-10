@@ -126,10 +126,6 @@ export default function QuestionPage() {
                         q.question_schema?.description || "Sin descripción"
                       }`}
                     </Typography>
-
-                    <Typography variant="caption" color="text.secondary">
-                      Puntos máximos: {Number(q.max_points) || 0}
-                    </Typography>
                   </Box>
                 </Grid>
               ))}

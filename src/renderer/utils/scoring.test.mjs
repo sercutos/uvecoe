@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 
 import {
   pointsForToggle,
-  questionMaxPoints,
   reorderStudentsForStation
 } from "./scoring.mjs";
 
@@ -34,30 +33,6 @@ test("station order wraps around and empty lists are safe", () => {
   assert.deepEqual(reorderStudentsForStation([], 1), []);
 });
 
-test("max_points stored by the server has priority", () => {
-  assert.equal(
-    questionMaxPoints({
-      max_points: 1,
-      question_schema: { options: [{ points: "0.5" }] }
-    }),
-    1
-  );
-});
-
-test("max_points falls back to the first option", () => {
-  assert.equal(
-    questionMaxPoints({
-      max_points: 0,
-      question_schema: { options: [{ points: "0.5" }] }
-    }),
-    0.5
-  );
-});
-
-test("max_points defaults to 0 without data", () => {
-  assert.equal(questionMaxPoints({}), 0);
-});
-
 test("unchecked answers are worth 0", () => {
   assert.equal(pointsForToggle({ options: [{ points: "0.5" }] }, false), 0);
 });
@@ -66,13 +41,13 @@ test("checked answers use the option points", () => {
   assert.equal(pointsForToggle({ options: [{ points: "0.5" }] }, true), 0.5);
 });
 
-test("checked answers fall back to max_points when there are no options", () => {
-  assert.equal(pointsForToggle({ options: [], max_points: 0.5 }, true), 0.5);
+test("checked answers without options stay at 0", () => {
+  assert.equal(pointsForToggle({ options: [] }, true), 0);
 });
 
 test("invalid option points stay at 0", () => {
   assert.equal(
-    pointsForToggle({ options: [{ points: "no-es-un-numero" }], max_points: 1 }, true),
+    pointsForToggle({ options: [{ points: "no-es-un-numero" }] }, true),
     0
   );
 });

@@ -24,15 +24,6 @@ function mapStudent(student) {
 
 function mapQuestion(question, stationId, idBlock) {
   const schema = question.question_schema || {};
-  const fromOptions =
-    Array.isArray(schema.options) && schema.options.length > 0
-      ? Number(schema.options[0].points)
-      : null;
-  const storedMaxPoints = Number(question.max_points);
-  const maxPoints =
-    Number.isFinite(storedMaxPoints) && storedMaxPoints > 0
-      ? storedMaxPoints
-      : fromOptions ?? 0;
 
   return {
     id: question.id,
@@ -42,7 +33,6 @@ function mapQuestion(question, stationId, idBlock) {
     area: question.area?.name || "General",
     id_station: question.id_station ?? stationId ?? null,
     id_block: question.id_block ?? idBlock ?? null,
-    max_points: Number.isFinite(maxPoints) ? maxPoints : 0,
     question_schema: JSON.stringify(schema),
     active: true
   };
