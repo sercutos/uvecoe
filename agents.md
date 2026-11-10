@@ -73,8 +73,8 @@ npx knex migrate:latest
 npx knex migrate:list
 npx knex migrate:make nombre_migracion
 
-# Tests: actualmente NO hay tests reales
-npm test             # termina con error a propósito
+# Tests de rotación y puntos (node:test, sin dependencias)
+npm test
 ```
 
 ### Requisitos para desarrollo
@@ -128,6 +128,7 @@ src/renderer/
     apiConfig.js            URL base y helpers de paths
     api.js                  fetchWithAuth (Bearer desde sessionStorage)
     auth.js                 Rol de sesión, admin/superadmin y organización
+    scoring.mjs             Rotación de alumnos y puntos (con test)
     stationData.js          Descarga completa y paginada de la estación
 
 assets/                     splash.html, login.html (sin uso), imágenes
@@ -439,7 +440,7 @@ No queda ningún P0 funcional abierto.
 
 ### P2 — mantenimiento
 
-- Falta de tests, lint y formato.
+- Faltan tests de integración, lint y formato; los tests actuales cubren rotación y puntos.
 - Falta de validación de payloads IPC.
 - `webSecurity: false` y `invoke` genérico en preload.
 - Tokens en claro; usar `safeStorage` de Electron.
@@ -536,7 +537,7 @@ Checklist funcional:
   online/offline, FK/upsert, puntos 0.5, sync con token y rechazo de lote parcial.
 - Soft-delete verificado: quitar una pregunta/alumno de la descarga los deja `active=false`,
   conserva sus resultados y los reactiva si vuelven a publicarse.
-- No hay suite de tests automatizada ni linter configurados.
+- Tests de rotación y puntos con `node --test`; no hay linter configurado.
 
 ---
 
@@ -545,9 +546,9 @@ Checklist funcional:
 **P0:** no queda deuda funcional; mantener las reglas de datos personales y de `dist/`.
 
 **P1:** eliminar código de prueba, arreglar el cronómetro, unificar el gestor de paquetes y añadir
-tests/lint.
+lint y tests de integración.
 
 **P2:** firma comercial OV/EV o Azure Trusted Signing si se distribuye fuera de la UV; el
 certificado interno actual solo genera confianza en equipos donde se despliegue el `.cer`.
 
-**P2:** refactor de descargas duplicadas, tests, lint, validación IPC, `safeStorage`, CSP.
+**P2:** refactor de descargas duplicadas, tests de integración, lint, validación IPC, `safeStorage`, CSP.

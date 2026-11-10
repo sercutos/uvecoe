@@ -17,26 +17,11 @@ import {
   isServerAuthRequired,
   markServerAuthRequired
 } from "../../utils/auth";
-
-// Rotación de los alumnos de un planner por estación.
-// Los alumnos llegan ordenados por planner_order 1..N.
-// La estación k empieza por el alumno k y rota hacia k-1:
-//   Estación 1 → 1, 12, 11, ..., 2
-//   Estación 2 → 2, 1, 12, ..., 3
-function reorderStudentsForStation(studentsList, stationOrder) {
-  const total = studentsList.length;
-  if (total === 0) return studentsList;
-
-  const order = Number(stationOrder) || 1;
-  const start = ((order - 1) % total + total) % total;
-  const ordered = [];
-
-  for (let i = 0; i < total; i += 1) {
-    ordered.push(studentsList[(start - i + total) % total]);
-  }
-
-  return ordered;
-}
+import {
+  pointsForToggle,
+  questionMaxPoints,
+  reorderStudentsForStation
+} from "../../utils/scoring.mjs";
 
 export default function EvaluationPage() {
   const navigate = useNavigate();
@@ -336,17 +321,6 @@ export default function EvaluationPage() {
         rawQuestions.sort((a, b) => (a.order || 0) - (b.order || 0));
 
         const mappedQuestions = rawQuestions.map((q) => {
-          const fromOptions =
-            Array.isArray(q.question_schema?.options) &&
-            q.question_schema.options.length > 0
-              ? Number(q.question_schema.options[0].points)
-              : null;
-          const storedMaxPoints = Number(q.max_points);
-          const maxPoints =
-            Number.isFinite(storedMaxPoints) && storedMaxPoints > 0
-              ? storedMaxPoints
-              : fromOptions ?? 0;
-
           return {
             id_pregunta_db: q.id || q.id_pregunta_db,
             id: q.question_schema?.reference || q.id_visual || `Q-${q.id}`,
@@ -359,7 +333,7 @@ export default function EvaluationPage() {
             options: Array.isArray(q.question_schema?.options)
               ? q.question_schema.options
               : [],
-            max_points: Number.isFinite(maxPoints) ? maxPoints : 0
+            max_points: questionMaxPoints(q)
           };
         });
 
@@ -477,12 +451,7 @@ export default function EvaluationPage() {
 
     // Puntos reales publicados por el servidor en la rúbrica.
     const selectedOption = q.options?.[0] || null;
-    const optionPoints = Number(selectedOption?.points ?? q.max_points ?? 0);
-    const points = nuevoValorSwitch
-      ? Number.isFinite(optionPoints)
-        ? optionPoints
-        : 0
-      : 0;
+    const points = pointsForToggle(q, nuevoValorSwitch);
 
     // Esquema idéntico al que espera la API.
     const schema = {

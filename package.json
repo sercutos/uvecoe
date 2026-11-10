@@ -10,7 +10,7 @@
     "start": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"npm:electron:dev\"",
     "start:clean": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"npm:dev\" \"npm:electron:dev:clean\"",
     "build": "vite build",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "pack": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win nsis --x64",
     "dist:win:signed": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-win-signed.ps1",
