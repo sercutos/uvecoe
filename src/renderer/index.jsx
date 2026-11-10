@@ -10,6 +10,7 @@ import SelectRoundPage from "./pages/rounds/SelectRoundPage";
 import SelectTurnPage from "./pages/turns/SelectTurnPage";
 
 import Settings from "./pages/settings/settings";
+import Questions from "./pages/questions/QuestionPage";
 import Students from "./pages/students/students";
 import Evaluation from "./pages/evaluation/evaluation";
 
@@ -129,6 +130,7 @@ function Bootstrap() {
       <Route path="/turns" element={<PrivateRoute><App><SelectTurnPage /></App></PrivateRoute>} />
 
       <Route path="/settings" element={<PrivateRoute><App><Settings /></App></PrivateRoute>} />
+      <Route path="/questions" element={<PrivateRoute><App><Questions /></App></PrivateRoute>} />
       <Route path="/evaluation" element={<PrivateRoute><App><Evaluation /></App></PrivateRoute>} />
       <Route path="/students" element={<PrivateRoute><App><Students /></App></PrivateRoute>} />
     </Routes>

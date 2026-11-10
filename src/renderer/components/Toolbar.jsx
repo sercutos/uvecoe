@@ -5,6 +5,7 @@ import { Box, IconButton, Tooltip, Menu, MenuItem, Modal, Typography, Button, Di
 import HomeIcon from '@mui/icons-material/Home';
 import SettingsIcon from '@mui/icons-material/Settings';
 import PeopleIcon from '@mui/icons-material/People';
+import QuizIcon from '@mui/icons-material/Quiz';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'; // Icono extra para el menú de ayuda
@@ -178,6 +179,12 @@ export default function Toolbar() {
         <Tooltip title="Alumnos">
           <IconButton onClick={() => navigate("/students")} sx={getIconStyle("/students")}>
             <PeopleIcon />
+          </IconButton>
+        </Tooltip>
+
+        <Tooltip title="Banco de Preguntas">
+          <IconButton onClick={() => navigate("/questions")} sx={getIconStyle("/questions")}>
+            <QuizIcon />
           </IconButton>
         </Tooltip>
 

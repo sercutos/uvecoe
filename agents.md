@@ -120,6 +120,7 @@ src/renderer/
     turns/                  Selección de turno
     evaluation/             Pantalla principal de evaluación
     settings/               Re-descarga, cambio de URL y sincronización
+    questions/              Vista informativa del banco de preguntas (sin responder)
     students/               Tabla de alumnos
     home/                   Archivo muerto/roto, no importado
   utils/
@@ -140,7 +141,8 @@ scripts/
 ### Flujo de pantallas
 
 `/login` → `/` (fecha) → `/rounds` → `/turns` → `/evaluation`
-Rutas auxiliares: `/settings`, `/students`.
+Rutas auxiliares: `/settings`, `/students`, `/questions`. El Banco de Preguntas es solo
+informativo: no tiene interruptores ni guarda respuestas.
 
 Si se entra directamente en `/evaluation` sin la selección completa (por ejemplo desde el icono
 "Evaluación Activa" del Toolbar), se redirige al primer paso que falte: `/`, `/rounds` o `/turns`.
