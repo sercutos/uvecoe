@@ -27,6 +27,16 @@ export function getChronoBaseUrl() {
 
   try {
     const api = new URL(getApiBaseUrl());
+
+    // En local, el API suele apuntar al contenedor :8000 y el Chrono está
+    // expuesto directamente en :5001. En producción se usa la URL de Caddy.
+    if (
+      api.port === "8000" &&
+      (api.hostname === "localhost" || api.hostname === "127.0.0.1")
+    ) {
+      return `${api.protocol}//${api.hostname}:5001`;
+    }
+
     const port = api.port === "8000" ? "" : api.port;
     return `${api.protocol}//${api.hostname}${port ? `:${port}` : ""}`;
   } catch {

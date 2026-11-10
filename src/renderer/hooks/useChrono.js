@@ -29,12 +29,14 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
       return;
     }
 
-    const url = `${getChronoBaseUrl()}/round${roundId}`;
-    const socket = io(url, {
+    // El Chrono emite en el namespace por defecto con eventos
+    // `*_round_<id>`; el namespace /round<id> rechaza conexiones.
+    const socket = io(getChronoBaseUrl(), {
       reconnection: true,
       reconnectionDelayMax: 2000,
       timeout: 5000
     });
+    const suffix = `_round_${roundId}`;
 
     setStatus("connecting");
 
@@ -62,7 +64,7 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
       setStatus(tickRef.current ? "stale" : "offline");
     });
 
-    socket.on("tic_tac", (msg) => {
+    socket.on(`tic_tac${suffix}`, (msg) => {
       const duration = Number(msg?.stage?.duration);
       const elapsed = Number(msg?.t);
       if (!Number.isFinite(duration) || !Number.isFinite(elapsed)) return;
@@ -93,7 +95,7 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
       }
     });
 
-    socket.on("init_stage", () => {
+    socket.on(`init_stage${suffix}`, () => {
       tickRef.current = null;
       setRemaining(null);
       setStageName("");
@@ -102,7 +104,7 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
       armIdleTimer();
     });
 
-    socket.on("evento", (msg) => {
+    socket.on(`evento${suffix}`, (msg) => {
       if (!eventTargetsStation(msg?.target, stationId)) return;
 
       const mensaje = msg?.data || "Aviso del cronómetro";
@@ -113,14 +115,16 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
       }
     });
 
-    socket.on("end_round", () => {
+    socket.on("end_round", (msg) => {
+      if (Number(msg?.id) !== Number(roundId)) return;
+
       tickRef.current = null;
       setRemaining(0);
       setStageName("");
       setStatus("finished");
     });
 
-    socket.on("aborted", () => {
+    socket.on(`aborted${suffix}`, () => {
       tickRef.current = null;
       setRemaining(0);
       setStatus("aborted");

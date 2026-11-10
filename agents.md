@@ -250,8 +250,11 @@ Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígene
 
 ### Cronómetro por Socket.IO
 
-- Se conecta al **mismo origen** que `api_base_url` (Caddy/nginx), namespace
-  `/round{selected_round_id}`.
+- En producción se conecta al **mismo origen** que `api_base_url` (Caddy/nginx).
+- En local, si `api_base_url` es `http://localhost:8000`, usa directamente
+  `http://localhost:5001` (el contenedor Chrono).
+- El servidor Chrono emite en el namespace por defecto con eventos
+  `tic_tac_round_{id}`, `evento_round_{id}`, etc.; la app los filtra por ronda.
 - Caddy enruta `/socket.io/*` al contenedor `chrono:5001`.
 - Eventos: `tic_tac` (cada segundo), `init_stage`, `evento`, `end_round`, `aborted`.
 - `tic_tac` manda tiempo transcurrido: `restante = stage.duration - t`.
