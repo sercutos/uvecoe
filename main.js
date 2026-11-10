@@ -358,25 +358,6 @@ ipcMain.handle("db:asegurar-referencias", async (event, payload) => {
 });
 
 
-// Obtener Students (Modo Offline) con Knex
-ipcMain.removeHandler('db:obtener-estudiantes');
-ipcMain.handle('db:obtener-estudiantes', async () => {
-  try {
-    const rows = await db('students')
-      .where({ active: true })
-      .select('*')
-      .orderBy('planner_order', 'asc');
-    
-    return rows.map((row, idx) => ({
-      id_estudiante: row.id,
-      num: row.planner_order || idx + 1,
-      name: `${row.surnames || ""}, ${row.name || ""}`.trim().toUpperCase()
-    }));
-  } catch (error) {
-    console.error("❌ Error en Knex al obtener estudiantes:", error);
-    throw error;
-  }
-});
 // TODOS Los estudiantes
 ipcMain.handle("db:getStudents", async () => {
   try {

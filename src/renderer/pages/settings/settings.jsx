@@ -1,5 +1,4 @@
 import Toolbar from "../../components/Toolbar";
-import { useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 
 import {
@@ -29,8 +28,6 @@ import {
 } from "../../utils/auth";
 
 export default function Settings() {
-  const navigate = useNavigate();
-
   // 📝 Estados para feedback visual
   const [loadingSync, setLoadingSync] = useState(false);
   const [loadingExport, setLoadingExport] = useState(false);
@@ -39,6 +36,10 @@ export default function Settings() {
   const [serverUrl, setServerUrl] = useState("");
   const [savingUrl, setSavingUrl] = useState(false);
   const [currentUrl, setCurrentUrl] = useState("");
+  const [serverStatus, setServerStatus] = useState({
+    state: "checking",
+    message: ""
+  });
 
   // 📥 Estados para descarga completa (ECOE + estación)
   const [ecoes, setEcoes] = useState([]);
@@ -46,6 +47,37 @@ export default function Settings() {
   const [selectedEcoe, setSelectedEcoe] = useState("");
   const [selectedStation, setSelectedStation] = useState("");
   const [downloadStatus, setDownloadStatus] = useState("");
+
+  const checkServerStatus = async () => {
+    setServerStatus({ state: "checking", message: "" });
+
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/backend/status`, {
+        signal: timeoutSignal()
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (data?.status !== "ok") {
+        throw new Error("Respuesta inesperada del servidor");
+      }
+
+      setServerStatus({ state: "ok", message: "Conectado" });
+    } catch (error) {
+      setServerStatus({
+        state: "error",
+        message: error.message || "Sin conexión"
+      });
+    }
+  };
+
+  useEffect(() => {
+    checkServerStatus();
+    const interval = setInterval(checkServerStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // 🔄 Cargar la URL del servidor desde la DB al montar
   useEffect(() => {
@@ -221,6 +253,7 @@ export default function Settings() {
       sessionStorage.setItem("api_base_url", serverUrl.trim());
       setCurrentUrl(serverUrl.trim());
       setAlertInfo({ show: true, severity: "success", msg: "✅ URL del servidor guardada correctamente." });
+      checkServerStatus();
     } catch (e) {
       setAlertInfo({ show: true, severity: "error", msg: `❌ Error al guardar: ${e.message}` });
     } finally {
@@ -555,7 +588,31 @@ export default function Settings() {
                 <Typography variant="h6">📊 Estado de conectividad</Typography>
                 <Box sx={{ mt: 2 }}>
                   <Typography>Motor local: 🟢 SQLite Activo</Typography>
-                  <Typography>Servidor Central: 🟢 {currentUrl || "No configurado"}</Typography>
+                  <Typography>
+                    Servidor Central:{" "}
+                    {serverStatus.state === "ok"
+                      ? "🟢 Conectado"
+                      : serverStatus.state === "checking"
+                        ? "🟠 Comprobando..."
+                        : "🔴 Sin conexión"}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {currentUrl || "No configurado"}
+                  </Typography>
+                  {serverStatus.state === "error" && (
+                    <Typography variant="caption" color="error" display="block">
+                      {serverStatus.message}
+                    </Typography>
+                  )}
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={checkServerStatus}
+                    disabled={serverStatus.state === "checking"}
+                    sx={{ mt: 1 }}
+                  >
+                    Comprobar
+                  </Button>
                   <Typography variant="subtitle2" sx={{ mt: 1, color: "text.secondary" }}>
                     Nota: Los interruptores de evaluación se guardan inmediatamente en caliente al hacer click.
                   </Typography>

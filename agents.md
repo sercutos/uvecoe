@@ -101,7 +101,6 @@ src/db/
   knex.js                   Instancia Knex y resolución de la ruta de la DB
   queries.js                Consultas de configuración, datos iniciales y usuarios
   settings.js               Tabla settings (api_base_url)
-  reset.js                  Borrado de la DB en desarrollo
   migrations/               Migraciones timestamped de Knex
 
 src/renderer/
@@ -111,7 +110,6 @@ src/renderer/
     Login.jsx               Login online/offline con hash bcrypt
     ReauthDialog.jsx        Reconexión con el servidor sin salir de la evaluación
     Toolbar.jsx             Navegación, ayuda, acerca de, logout y estado de sync
-    Logo/Logo.jsx           Logo (actualmente importado pero no usado en Login)
   pages/
     setup/FirstRunSetup.jsx Asistente de primer arranque: URL + admin
     login/                  Envoltorio de Login
@@ -123,7 +121,6 @@ src/renderer/
     settings/               Re-descarga, cambio de URL y sincronización
     questions/              Vista informativa del banco de preguntas (sin responder)
     students/               Tabla de alumnos
-    home/                   Archivo muerto/roto, no importado
   hooks/
     useChrono.js            Socket.IO del cronómetro y eventos de audio
   utils/
@@ -136,7 +133,7 @@ src/renderer/
     stationData.js          Descarga completa y paginada de la estación
 
 src/renderer/assets/sounds/ Audios del cronómetro (entrar, salir, avisos)
-assets/                     splash.html, login.html (sin uso), imágenes
+assets/                     splash.html, imágenes
 data/                       uvecoe.db (runtime; openecoe_lite.db fue eliminada)
 dist/                       Build de Vite (regenerado el 2026-11-07)
 scripts/
@@ -217,7 +214,6 @@ Definidos en `main.js` y expuestos en `preload.js`:
 - `db:obtenerUsuarioLocal`
 - `db:guardarUsuarioLocal`
 - `db:guardarDatosIniciales`
-- `db:obtener-estudiantes`
 - `db:getStudents`
 - `db:obtener-preguntas`
 - `db:obtener-respuestas-alumno`
@@ -438,6 +434,10 @@ No queda ningún P0 funcional abierto.
   reproduce los audios de `evento` y muestra “Sin cronómetro” si no hay estado.
 - El panel de configuración inicial exige elegir ECOE y estación; ya no autoselecciona.
 - Eliminada de Settings la tarjeta “Reset DB” que solo mostraba un aviso y no borraba nada.
+- Settings comprueba `/backend/status` de verdad; ya no muestra el servidor en verde por defecto.
+- Eliminado el código muerto: `home.jsx`, `students copy.jsx`, `assets/login.html`,
+  `Logo/Logo.jsx`, `src/db/reset.js`, `logo.jpeg`, `db:obtener-estudiantes` y
+  `queries.guardarUsuarioLocal`.
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
@@ -455,9 +455,6 @@ No queda ningún P0 funcional abierto.
 
 ### P1 — robustez y calidad
 
-- Settings muestra estado verde aunque no haya conexión.
-- `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html` y `LogoOscuro`
-  no se usan.
 - Coexisten `package-lock.json` y `yarn.lock`.
 - `src/db/migrations/init.js` no tiene timestamp; no borrarlo (ya está registrado en DBs antiguas).
 

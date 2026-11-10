@@ -156,10 +156,8 @@ export default function useChrono({ roundId, stationId, enabled = true }) {
 
   return {
     status,
-    remaining,
     formatted: formatChrono(remaining),
     label: chronoStatusLabel(status, stageName),
-    stageName,
     event,
     clearEvent: () => setEvent(null)
   };

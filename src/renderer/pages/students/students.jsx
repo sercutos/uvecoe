@@ -1,10 +1,9 @@
-import { useNavigate } from "react-router-dom";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { styled } from '@mui/material/styles';
 import TableCell, { tableCellClasses } from '@mui/material/TableCell';
-import { 
-  Table, TableBody, TableContainer, TableHead, TableRow, 
-  Paper, Button, TextField, Select, MenuItem, Typography, Box, FormControl, InputLabel 
+import {
+  Table, TableBody, TableContainer, TableHead, TableRow,
+  Paper, Typography, Box
 } from "@mui/material";
 
 import Toolbar from "../../components/Toolbar";
@@ -31,7 +30,6 @@ const StyledTableRow = styled(TableRow)(({ theme }) => ({
 
 
 export default function Students() {
-  const navigate = useNavigate();
   // 1. Declarar el estado SIEMPRE en la raíz del componente
   const [students, setStudents] = useState([]);
 
@@ -39,7 +37,6 @@ export default function Students() {
   const fetchStudents = async () => {
     try {
       const data = await window.api.getStudents();
-      console.log(data);
       setStudents(data || []); // Guardar los datos en el estado
     } catch (error) {
       console.error("Error al cargar estudiantes:", error);

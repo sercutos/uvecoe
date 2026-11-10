@@ -37,7 +37,3 @@ export function getChronoBaseUrl() {
 export function apiPath(path) {
   return `${getApiBaseUrl()}/backend/api/v1${path.startsWith("/") ? path : `/${path}`}`;
 }
-
-export function authPath(path) {
-  return `${getApiBaseUrl()}/backend/auth${path.startsWith("/") ? path : `/${path}`}`;
-}

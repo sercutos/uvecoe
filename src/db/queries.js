@@ -334,21 +334,6 @@ const queries = {
   },
 
   // --- CONSULTAS DE USUARIOS ---
-  guardarUsuarioLocal: async (usuario) => {
-    const fila = {
-      usuario_id_server: usuario.id ?? Date.now(),
-      email: String(usuario.email || "").trim().toLowerCase(),
-      role: usuario.role
-    };
-
-    const token = usuario.token ?? usuario.token_temporal;
-    if (token) fila.token_temporal = token;
-    if (usuario.password_hash) fila.password_hash = usuario.password_hash;
-
-    // La identidad local es el email; usuario_id_server puede cambiar.
-    return db("users").insert(fila).onConflict("email").merge();
-  },
-
   obtenerUsuarioPorEmail: async (email) => {
     if (!email) return null;
 
