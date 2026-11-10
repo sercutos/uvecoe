@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { randomUUID } = require("crypto");
 const queries = require("./src/db/queries");
 const settings = require("./src/db/settings");
 
@@ -457,7 +458,8 @@ ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
         typeof resultado.answer_schema === "string"
           ? resultado.answer_schema
           : JSON.stringify(resultado.answer_schema || {}),
-      sincronizado: false
+      sincronizado: false,
+      sync_batch: null
     };
   });
 
@@ -471,6 +473,7 @@ ipcMain.handle('db:guardar-resultado', async (event, listaResultados) => {
             points: resultado.points,
             answer_schema: resultado.answer_schema,
             sincronizado: false,
+            sync_batch: null,
             evaluado_en: trx.fn.now()
           });
       }
@@ -498,12 +501,21 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
   }
 
   syncInProgress = true;
+  let batchId = null;
 
   try {
-    // 1. Extraemos de SQLite todas las respuestas locales que aún NO se han subido
-    const registrosPendientes = await db('resultados')
-      .where({ sincronizado: false }) // o 0, según guardes el booleano
-      .select('*');
+    // 1. Reclamamos el lote: marcamos las pendientes y leemos solo esas filas.
+    // Cualquier escritura nueva limpia sync_batch, así no se marca como subida.
+    batchId = randomUUID();
+    const registrosPendientes = await db.transaction(async (trx) => {
+      await trx("resultados")
+        .where({ sincronizado: false })
+        .update({ sync_batch: batchId });
+
+      return trx("resultados")
+        .where({ sync_batch: batchId })
+        .select("*");
+    });
 
     if (registrosPendientes.length === 0) {
       return { success: true, message: "No hay respuestas pendientes de sincronizar.", count: 0 };
@@ -577,10 +589,11 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
       );
     }
 
-    const idsSincronizados = registrosPendientes.map((p) => p.id);
+    // Solo se marcan las filas que siguen en este lote. Si el evaluador cambió
+    // una respuesta durante el envío, su upsert ya limpió sync_batch.
     await db("resultados")
-      .whereIn("id", idsSincronizados)
-      .update({ sincronizado: true });
+      .where({ sync_batch: batchId })
+      .update({ sincronizado: true, sync_batch: null });
 
     return {
       success: true,
@@ -592,6 +605,19 @@ ipcMain.handle('db:sincronizar-respuestas-al-servidor', async (event, token) => 
       "❌ Fallo crítico en el proceso de sincronización masiva:",
       error
     );
+
+    if (batchId) {
+      try {
+        await db("resultados")
+          .where({ sync_batch: batchId })
+          .update({ sync_batch: null });
+      } catch (clearError) {
+        console.error(
+          "No se pudo liberar el lote de sincronización:",
+          clearError
+        );
+      }
+    }
 
     const message =
       error.name === "TimeoutError" || error.name === "AbortError"

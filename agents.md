@@ -120,7 +120,6 @@ src/renderer/
     turns/                  Selección de turno
     evaluation/             Pantalla principal de evaluación
     settings/               Re-descarga, cambio de URL y sincronización
-    questions/              Vista de prueba del banco de preguntas
     students/               Tabla de alumnos
     home/                   Archivo muerto/roto, no importado
   utils/
@@ -141,7 +140,7 @@ scripts/
 ### Flujo de pantallas
 
 `/login` → `/` (fecha) → `/rounds` → `/turns` → `/evaluation`
-Rutas auxiliares: `/settings`, `/students`, `/questions`.
+Rutas auxiliares: `/settings`, `/students`.
 
 Si se entra directamente en `/evaluation` sin la selección completa (por ejemplo desde el icono
 "Evaluación Activa" del Toolbar), se redirige al primer paso que falte: `/`, `/rounds` o `/turns`.
@@ -180,7 +179,7 @@ Ruta de la DB:
 | `users` | `usuario_id_server` (unique), `email` (unique), `role`, `token_temporal`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
 | `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `max_points`, `active` | `question_schema` incluye `type` y `options[].points`; `max_points` se rellena desde la rúbrica publicada; `active=false` si la pregunta ya no se publica |
-| `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert` |
+| `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `sync_batch`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert`; `sync_batch` marca el lote en vuelo y cualquier escritura nueva lo limpia |
 | `settings` | `key` (PK), `value` | `api_base_url` |
 | `shifts` | `id`, `id_ecoe`, `shift_code`, `time_start` | Turnos descargados para seleccionar fecha/turno offline |
 | `rounds` | `id`, `id_ecoe`, `round_code`, `description` | Rondas descargadas |
@@ -317,7 +316,9 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
     selección de fecha/ronda/turno, y conservar `api_base_url` para el siguiente Login.
 13. **Sincronización:** el Toolbar muestra `N pendientes` / `Al día` y permite sincronizar al
     pulsar. La evaluación intenta auto-sync al entrar, cada 5 minutos y al pasar de alumno; es
-    silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan.
+    silenciosa y no bloquea. Si falla, las respuestas quedan pendientes y se reintentan. El lote
+    en vuelo se marca con `sync_batch`; si el evaluador cambia una respuesta durante el envío, el
+    `upsert` limpia esa marca y la fila no se da por sincronizada.
 14. **Primer arranque:** una DB nueva (`setup_completed=false`) muestra el asistente antes del
     Login. Exige probar `/backend/status`, autenticar un admin y validar `/users/me`
     (`is_superadmin` o rol `administrator`). Si falla, no se puede continuar. Las DBs ya
@@ -404,8 +405,7 @@ No queda ningún P0 funcional abierto.
 
 ### P1 — robustez y calidad
 
-- Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx`) e IDs fijos
-  (`QuestionPage.jsx`).
+- Código de pruebas: autoselección de ECOE/estación (`AdminConfig.jsx`).
 - Cronómetro que vuelve a `07:00` al llegar a cero (`evaluation.jsx`).
 - Settings muestra estado verde aunque no haya conexión.
 - `home.jsx` está roto/no importado; `students copy.jsx`, `assets/login.html` y `LogoOscuro`

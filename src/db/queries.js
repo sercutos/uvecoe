@@ -192,7 +192,8 @@ const queries = {
               ? Number(answer.points)
               : 0,
             answer_schema: answerSchema,
-            sincronizado: true
+            sincronizado: true,
+            sync_batch: null
           });
         }
 
@@ -217,7 +218,7 @@ const queries = {
             await trx("resultados")
               .insert(filas.slice(i, i + 200))
               .onConflict(["id_student", "id_question", "id_station"])
-              .merge(["points", "answer_schema", "sincronizado"]);
+              .merge(["points", "answer_schema", "sincronizado", "sync_batch"]);
           }
         }
       }
