@@ -79,7 +79,8 @@ const queries = {
             id: s.id,
             id_ecoe: s.id_ecoe,
             shift_code: s.shift_code,
-            time_start: s.time_start
+            // El backend puede devolver un string ISO o { $date: "..." }.
+            time_start: s.time_start?.$date ?? s.time_start
           }))
         );
       }

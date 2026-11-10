@@ -254,7 +254,7 @@ Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígene
 | `GET /users/me` | `UserRead` | Requiere Bearer; el asistente exige `is_superadmin` o rol `administrator` |
 | `GET /ecoes` | Array | Requiere Bearer |
 | `GET /stations?ecoe_id=` | `{ items, total, page, per_page }` | Campo `id_parent_station` (no `parent_station`) |
-| `GET /shifts?id_ecoe=` | `{ items, ... }` | `time_start` es string ISO, no `{ $date }`; el código lo tolera |
+| `GET /shifts?id_ecoe=` | `{ items, ... }` | `time_start` puede ser string ISO o `{ $date }`; se normaliza a string antes de insertar |
 | `GET /rounds?ecoe_id=` | Array | |
 | `GET /planners?shift_id=&round_id=` | Array | |
 | `GET /blocks?station_id=` | `{ items, ... }` | |
