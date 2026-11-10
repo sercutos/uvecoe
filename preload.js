@@ -17,7 +17,6 @@ contextBridge.exposeInMainWorld("api", {
   guardarResultadoLocal: (datos) => ipcRenderer.invoke('db:guardar-resultado', datos),
   sincronizarRespuestas: (token) => ipcRenderer.invoke('db:sincronizar-respuestas-al-servidor', token),
   contarPendientes: () => ipcRenderer.invoke('db:contar-pendientes'),
-  descargarPreguntasServidor: (stationId) => ipcRenderer.invoke('db:descargar-preguntas-servidor', stationId),
   guardarDatosIniciales: (payload) => ipcRenderer.invoke('db:guardarDatosIniciales', payload),
   obtenerShifts: (ecoeId) => ipcRenderer.invoke('db:obtener-shifts', ecoeId),
   obtenerRounds: (ecoeId) => ipcRenderer.invoke('db:obtener-rounds', ecoeId),

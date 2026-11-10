@@ -211,7 +211,6 @@ Definidos en `main.js` y expuestos en `preload.js`:
 - `db:obtenerUsuarioLocal`
 - `db:guardarUsuarioLocal`
 - `db:guardarDatosIniciales`
-- `db:descargar-preguntas-servidor`
 - `db:obtener-estudiantes`
 - `db:getStudents`
 - `db:obtener-preguntas`
@@ -240,7 +239,8 @@ Base:
 - Swagger: `/backend/api/v1/docs`
 
 El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWithAuth`).
-**La sincronización y `db:descargar-preguntas-servidor` de `main.js` no envían token.**
+La sincronización también envía el token; el renderer no llama a `bulk-sync` sin una sesión de
+servidor válida.
 
 | Endpoint | Forma de respuesta | Notas críticas |
 |---|---|---|
@@ -256,7 +256,7 @@ El token se envía como `Authorization: Bearer <token>` en el renderer (`fetchWi
 | `GET /questions?station_id=&block_id=` | Array | Cada pregunta trae `question_schema` y `area.name`; hay `max_points` de `0.5` |
 | `GET /students?ecoe_id=&planner_id=` | `{ items, total, ... }` | **El parámetro es `ecoe_id`, NO `id_ecoe`** |
 | `GET /users` | Array | Requiere Bearer |
-| `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | Hoy no exige token en el servidor |
+| `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | La app exige token de sesión antes de llamarlo |
 | `GET /answers/station/{station_id}` | Array de `AnswerRead` | Se descarga al configurar/actualizar el portátil y se importa en `resultados` |
 
 ### Descarga y agrupación de alumnos

@@ -304,53 +304,6 @@ ipcMain.handle("db:asegurar-referencias", async (event, payload) => {
 });
 
 
-ipcMain.removeHandler('db:descargar-preguntas-servidor');
-ipcMain.handle('db:descargar-preguntas-servidor', async (event, stationId) => {
-  try {
-    const apiBase = await settings.getApiBaseUrl();
-
-    const blocksRes = await fetch(`${apiBase}/backend/api/v1/blocks?station_id=${stationId}`);
-    const blocksData = await blocksRes.json();
-    const block = blocksData?.items?.[0];
-
-    if (!block) throw new Error("No block");
-
-    const questionsRes = await fetch(
-      `${apiBase}/backend/api/v1/questions?station_id=${stationId}&block_id=${block.id}&per_page=500`
-    );
-
-    const questionsData = await questionsRes.json();
-    const rawQuestions = Array.isArray(questionsData) ? questionsData : questionsData.items || [];
-
-    return await db.transaction(async (trx) => {
-
-      await trx('questions').del();
-
-      const rows = rawQuestions.map(q => ({
-        id: q.id,
-        area: typeof q.area === 'object' ? q.area?.name : q.area || 'General',
-        id_station: stationId,
-        order: q.order || 0,
-        id_block: block?.id ?? null,
-        reference: q.question_schema?.reference || '',
-        description: q.question_schema?.description || '',
-        question_schema: JSON.stringify(q.question_schema || {})
-      }));
-      // INSERT DB
-      //console.log("ROWS DEBUG:", rows[0]);
-      console.log("DEBUG: block.id:", block.id);
-      console.log("DEBUG: Primera fila:", rows[0]);
-      await trx('questions').insert(rows);
-
-      return { success: true, count: rows.length };
-    });
-
-  } catch (e) {
-    console.error(e);
-    throw e;
-  }
-});
-
 // Obtener Students (Modo Offline) con Knex
 ipcMain.removeHandler('db:obtener-estudiantes');
 ipcMain.handle('db:obtener-estudiantes', async () => {
