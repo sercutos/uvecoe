@@ -438,6 +438,8 @@ No queda ningún P0 funcional abierto.
 - Eliminado el código muerto: `home.jsx`, `students copy.jsx`, `assets/login.html`,
   `Logo/Logo.jsx`, `src/db/reset.js`, `logo.jpeg`, `db:obtener-estudiantes` y
   `queries.guardarUsuarioLocal`.
+- Un solo gestor de paquetes: npm. Eliminados `yarn.lock`, `electronmon` y el paquete
+  duplicado `electron-rebuild`; se mantiene `@electron/rebuild` (mismo binario).
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación
@@ -455,7 +457,6 @@ No queda ningún P0 funcional abierto.
 
 ### P1 — robustez y calidad
 
-- Coexisten `package-lock.json` y `yarn.lock`.
 - `src/db/migrations/init.js` no tiene timestamp; no borrarlo (ya está registrado en DBs antiguas).
 
 ### P2 — mantenimiento
