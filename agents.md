@@ -437,6 +437,7 @@ No queda ningún P0 funcional abierto.
 - Cronómetro conectado al Chrono por Socket.IO: cuenta desde `stage.duration - t`, para en cero,
   reproduce los audios de `evento` y muestra “Sin cronómetro” si no hay estado.
 - El panel de configuración inicial exige elegir ECOE y estación; ya no autoselecciona.
+- Eliminada de Settings la tarjeta “Reset DB” que solo mostraba un aviso y no borraba nada.
 - Las respuestas en pantalla se guardan por `id_student`; una lectura o escritura tardía del
   alumno anterior ya no puede caer en el alumno siguiente.
 - Contador de pendientes en el Toolbar, sync manual al pulsar y auto-sync en evaluación

@@ -548,27 +548,6 @@ export default function Settings() {
             </Card>
           </Grid>
 
-          {/* 🧹 Reset DB */}
-          <Grid item xs={12} md={6}>
-            <Card sx={{ border: "1px solid #ffcccc" }}>
-              <CardContent>
-                <Typography variant="h6">🧹 Limpieza de Seguridad</Typography>
-                <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
-                  Borra todos los datos y restablece el portátil a los valores de fábrica (Solo usar al acabar todo el evento ECOE).
-                </Typography>
-
-                <Button 
-                  variant="outlined" 
-                  color="error" 
-                  sx={{ mt: 2 }}
-                  onClick={() => alert("Para resetear la DB inicia el entorno de pruebas con 'npm run dev:clean'")}
-                >
-                  Reset DB Local
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-
           {/* 📊 Estado */}
           <Grid item xs={12} md={6}>
             <Card>
