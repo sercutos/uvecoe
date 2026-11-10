@@ -57,8 +57,8 @@ npm run build
 # Build + empaquetado (--dir) -> release/linux-unpacked
 npm run pack
 
-# Instalador Windows NSIS -> release/UVECOE-<version>-setup.exe
-# (requiere Windows o Wine/Docker; en este entorno se compiló en Windows)
+# Instalador Windows NSIS sin firmar -> release/UVECOE-<version>-setup.exe
+# (requiere Windows o Wine/Docker; no requiere certificado)
 npm run dist:win
 
 # Windows firmado con el certificado interno (recomendado)

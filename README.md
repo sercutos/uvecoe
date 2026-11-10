@@ -62,7 +62,7 @@ Cubren la rotación de alumnos por estación y el cálculo de puntos.
 ```bash
 npm run build       # genera dist/
 npm run pack        # build + paquete sin instalador
-npm run dist:win    # instalador Windows
+npm run dist:win    # instalador Windows sin firmar (no requiere certificado)
 npm run dist:win:signed  # instalador Windows firmado
 ```
 

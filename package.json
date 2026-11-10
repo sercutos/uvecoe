@@ -38,7 +38,7 @@
     "artifactName": "UVECOE-${version}-setup.${ext}",
     "win": {
       "icon": "assets/images/icono.png",
-      "forceCodeSigning": true,
+      "forceCodeSigning": false,
       "signtoolOptions": {
         "signingHashAlgorithms": [
           "sha256"
