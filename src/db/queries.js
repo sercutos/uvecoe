@@ -318,7 +318,10 @@ const queries = {
         station_id: config.station_id,
         station_name: config.station_name,
         block_id: config.block_id,
-        station_order: config.station_order ?? null
+        station_order: config.station_order ?? null,
+        ecoe_name: config.ecoe_name ?? null,
+        organization_name: config.organization_name ?? null,
+        organization_id: config.organization_id ?? null
       });
     });
   },

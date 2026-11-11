@@ -56,6 +56,41 @@ async function fetchQuestions(stationId) {
   return todas;
 }
 
+// Organizaciones disponibles para filtrar las ECOEs.
+export async function fetchOrganizations() {
+  const data = await fetchWithAuth("/organizations");
+  return Array.isArray(data) ? data : data.items || [];
+}
+
+// Identifica el ECOE y su organización para mostrarlos en el Toolbar.
+export function getEcoeContext(ecoe, fallbackId, organizations = []) {
+  const ecoeId = Number(ecoe?.id ?? fallbackId);
+
+  const rawOrgId = ecoe?.id_organization;
+  const organizationId =
+    rawOrgId === null || rawOrgId === undefined || rawOrgId === ""
+      ? null
+      : Number(rawOrgId);
+
+  const rawSessionOrgId = sessionStorage.getItem("user_org_id");
+  const sessionOrgId = rawSessionOrgId ? Number(rawSessionOrgId) : null;
+  const isOwnOrganization =
+    organizationId !== null && organizationId === sessionOrgId;
+  const organization = organizations.find(
+    (item) => Number(item.id) === organizationId
+  );
+
+  return {
+    ecoe_name: ecoe?.nombre || ecoe?.name || `ECOE ${ecoeId}`,
+    organization_name:
+      ecoe?.organization?.name ||
+      ecoe?.organization_name ||
+      organization?.name ||
+      (isOwnOrganization ? sessionStorage.getItem("user_org_name") || "" : ""),
+    organization_id: Number.isFinite(organizationId) ? organizationId : null
+  };
+}
+
 /**
  * Descarga todo lo necesario para configurar un portátil:
  * bloque, preguntas de la estación, los 276 alumnos del ECOE,
@@ -72,7 +107,8 @@ export async function fetchStationData({ ecoeId, stationId }) {
     roundsData,
     plannersData,
     stations,
-    answers
+    answers,
+    organizationsData
   ] = await Promise.all([
     fetchWithAuth(`/blocks?station_id=${stationId}&per_page=100`),
     fetchQuestions(stationId),
@@ -87,6 +123,14 @@ export async function fetchStationData({ ecoeId, stationId }) {
       // falla en un servidor antiguo o no hay permisos.
       console.warn(
         "⚠️ No se pudieron descargar las respuestas del servidor:",
+        error
+      );
+      return [];
+    }),
+    fetchOrganizations().catch((error) => {
+      // El nombre de la organización es informativo: no bloquea la descarga.
+      console.warn(
+        "⚠️ No se pudieron descargar las organizaciones:",
         error
       );
       return [];
@@ -111,6 +155,10 @@ export async function fetchStationData({ ecoeId, stationId }) {
   const station =
     stations.find((s) => Number(s.id) === Number(stationId)) || null;
 
+  const organizations = Array.isArray(organizationsData)
+    ? organizationsData
+    : [];
+
   return {
     block,
     questions,
@@ -120,6 +168,7 @@ export async function fetchStationData({ ecoeId, stationId }) {
     rounds,
     planners,
     station,
-    answers
+    answers,
+    organizations
   };
 }

@@ -18,7 +18,11 @@ import {
 import Grid from "@mui/material/GridLegacy";
 import { getApiBaseUrl } from "../../utils/apiConfig";
 import { timeoutSignal } from "../../utils/api";
-import { fetchStationData } from "../../utils/stationData";
+import {
+  fetchOrganizations,
+  fetchStationData,
+  getEcoeContext
+} from "../../utils/stationData";
 import {
   clearServerAuthRequired,
   getServerToken,
@@ -44,9 +48,20 @@ export default function Settings() {
   // 📥 Estados para descarga completa (ECOE + estación)
   const [ecoes, setEcoes] = useState([]);
   const [stations, setStations] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [selectedOrganization, setSelectedOrganization] = useState("");
   const [selectedEcoe, setSelectedEcoe] = useState("");
   const [selectedStation, setSelectedStation] = useState("");
   const [downloadStatus, setDownloadStatus] = useState("");
+
+  const isSuperadmin = isSuperadminSession();
+  const visibleEcoes =
+    isSuperadmin && selectedOrganization
+      ? ecoes.filter(
+          (ecoe) =>
+            Number(ecoe.id_organization) === Number(selectedOrganization)
+        )
+      : ecoes;
 
   const checkServerStatus = async () => {
     setServerStatus({ state: "checking", message: "" });
@@ -182,6 +197,23 @@ export default function Settings() {
       }
     }
     fetchEcoes();
+  }, []);
+
+  // 1b. Cargar organizaciones para el filtro de superadmin
+  useEffect(() => {
+    let active = true;
+
+    fetchOrganizations()
+      .then((lista) => {
+        if (active) setOrganizations(lista);
+      })
+      .catch((error) => {
+        console.warn("[Settings] No se pudieron cargar las organizaciones:", error);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // 2. Cargar estaciones cuando cambia el ECOE
@@ -377,7 +409,8 @@ export default function Settings() {
           `Estación ${selectedStation}`,
         block_id: data.block.id,
         station_order:
-          data.station?.order ?? estacionActiva?.order ?? null
+          data.station?.order ?? estacionActiva?.order ?? null,
+        ...getEcoeContext(ecoeSeleccionada, selectedEcoe, data.organizations)
       };
 
       setDownloadStatus(
@@ -398,6 +431,7 @@ export default function Settings() {
       });
 
       await window.api.guardarConfiguracion(configLocal);
+      window.dispatchEvent(new Event("uvecoe:config-changed"));
 
       setDownloadStatus(
         "✅ ¡Portátil configurado con éxito y listo para trabajar Offline!"
@@ -470,6 +504,30 @@ export default function Settings() {
                 )}
 
                 <Box component="form" onSubmit={handleDescargarCompleto} sx={{ mt: 2, display: "flex", flexDirection: "column", gap: 2 }}>
+                  {isSuperadmin && (
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Organización</InputLabel>
+                      <Select
+                        value={selectedOrganization}
+                        label="Organización"
+                        onChange={(e) => {
+                          setSelectedOrganization(e.target.value);
+                          setSelectedEcoe("");
+                          setSelectedStation("");
+                          setStations([]);
+                        }}
+                        disabled={loadingSync}
+                      >
+                        <MenuItem value="">Todas las organizaciones</MenuItem>
+                        {organizations.map((org) => (
+                          <MenuItem key={org.id} value={org.id}>
+                            {org.name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
+
                   <FormControl fullWidth size="small">
                     <InputLabel>1. Seleccionar ECOE</InputLabel>
                     <Select
@@ -479,7 +537,7 @@ export default function Settings() {
                       disabled={loadingSync}
                     >
                       <MenuItem value="">-- Seleccionar Examen --</MenuItem>
-                      {ecoes.map(ecoe => (
+                      {visibleEcoes.map(ecoe => (
                         <MenuItem key={ecoe.id} value={ecoe.id}>
                           {ecoe.nombre || ecoe.name || `ECOE ID: ${ecoe.id}`}
                         </MenuItem>

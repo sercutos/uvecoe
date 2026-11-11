@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { getApiBaseUrl } from "../../utils/apiConfig";
 import { timeoutSignal } from "../../utils/api";
-import { fetchStationData } from "../../utils/stationData";
+import {
+  fetchOrganizations,
+  fetchStationData,
+  getEcoeContext
+} from "../../utils/stationData";
+import { getSessionOrganizationId, isSuperadminSession } from "../../utils/auth";
 
 export default function AdminConfig({ onConfigSuccess }) {
   const [ecoes, setEcoes] = useState([]);
   const [stations, setStations] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+  const [selectedOrganization, setSelectedOrganization] = useState("");
   
   const [selectedEcoe, setSelectedEcoe] = useState('');
   const [selectedStation, setSelectedStation] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+
+  const isSuperadmin = isSuperadminSession();
+  const visibleEcoes =
+    isSuperadmin && selectedOrganization
+      ? ecoes.filter(
+          (ecoe) =>
+            Number(ecoe.id_organization) === Number(selectedOrganization)
+        )
+      : ecoes;
 
   const getApiUrl = () => `${getApiBaseUrl()}/backend/api/v1`;
 
@@ -37,7 +53,24 @@ export default function AdminConfig({ onConfigSuccess }) {
         const data = await response.json();
         
         if (Array.isArray(data)) {
-            setEcoes(data);
+            const isSuperadmin = isSuperadminSession();
+            const orgId = getSessionOrganizationId();
+
+            if (!isSuperadmin && orgId === null) {
+              setEcoes([]);
+              setStatusMessage(
+                "❌ No se pudo determinar la organización de este usuario."
+              );
+              return;
+            }
+
+            setEcoes(
+              isSuperadmin
+                ? data
+                : data.filter(
+                    (ecoe) => Number(ecoe.id_organization) === orgId
+                  )
+            );
         } else {
             setEcoes([]);
             setStatusMessage("⚠️ El servidor no devolvió una lista válida.");
@@ -54,6 +87,26 @@ export default function AdminConfig({ onConfigSuccess }) {
       }
     }
     fetchEcoes();
+  }, []);
+
+  // 1b. Cargar organizaciones para el filtro de superadmin
+  useEffect(() => {
+    let active = true;
+
+    fetchOrganizations()
+      .then((lista) => {
+        if (active) setOrganizations(lista);
+      })
+      .catch((error) => {
+        console.warn(
+          "No se pudieron cargar las organizaciones:",
+          error
+        );
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // 2. Cargar las estaciones cuando cambie el ECOE seleccionado
@@ -114,6 +167,20 @@ export default function AdminConfig({ onConfigSuccess }) {
     e.preventDefault();
     if (!selectedEcoe || !selectedStation) return;
 
+    const ecoeSeleccionada = ecoes.find(
+      (ecoe) => Number(ecoe.id) === Number(selectedEcoe)
+    );
+    const orgId = getSessionOrganizationId();
+
+    if (
+      !isSuperadminSession() &&
+      (orgId === null ||
+        Number(ecoeSeleccionada?.id_organization) !== orgId)
+    ) {
+      setStatusMessage("❌ No tiene permiso para descargar esta ECOE.");
+      return;
+    }
+
     setLoading(true);
     setStatusMessage("⏳ Descargando datos del servidor...");
 
@@ -140,7 +207,8 @@ export default function AdminConfig({ onConfigSuccess }) {
           `Estación ${selectedStation}`,
         block_id: data.block.id,
         station_order:
-          data.station?.order ?? estacionActiva?.order ?? null
+          data.station?.order ?? estacionActiva?.order ?? null,
+        ...getEcoeContext(ecoeSeleccionada, selectedEcoe, data.organizations)
       };
 
       setStatusMessage(
@@ -162,6 +230,7 @@ export default function AdminConfig({ onConfigSuccess }) {
       });
 
       await window.api.guardarConfiguracion(configLocal);
+      window.dispatchEvent(new Event("uvecoe:config-changed"));
 
       setStatusMessage(
         "✅ ¡Portátil configurado con éxito y listo para trabajar Offline!"
@@ -188,6 +257,30 @@ export default function AdminConfig({ onConfigSuccess }) {
 
       <form onSubmit={handleConfigurarPortatil} style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
         
+        {isSuperadmin && (
+          <div>
+            <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Organización:</label>
+            <select
+              value={selectedOrganization}
+              onChange={(e) => {
+                setSelectedOrganization(e.target.value);
+                setSelectedEcoe("");
+                setSelectedStation("");
+                setStations([]);
+              }}
+              disabled={loading}
+              style={{ width: '100%', padding: '10px', fontSize: '16px' }}
+            >
+              <option value="">Todas las organizaciones</option>
+              {organizations.map(org => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div>
           <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>1. Seleccione el ECOE:</label>
           <select 
@@ -198,7 +291,7 @@ export default function AdminConfig({ onConfigSuccess }) {
             required
             
           >
-            <option value="">-- Seleccionar Examen --</option>            {Array.isArray(ecoes) && ecoes.map(ecoe => (
+            <option value="">-- Seleccionar Examen --</option>            {Array.isArray(visibleEcoes) && visibleEcoes.map(ecoe => (
                 <option key={ecoe.id} value={ecoe.id}>
                 {ecoe.nombre || ecoe.name || `ECOE ID: ${ecoe.id}`}
                 </option>

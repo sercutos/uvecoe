@@ -59,6 +59,7 @@ export default function Toolbar() {
   );
   const [reauthOpen, setReauthOpen] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [stationContext, setStationContext] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -94,6 +95,41 @@ export default function Toolbar() {
       window.removeEventListener("uvecoe:pending-changed", refreshPending);
       window.removeEventListener("uvecoe:sync-error", handleSyncError);
       window.removeEventListener("uvecoe:sync-ok", handleSyncOk);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadStationContext = async () => {
+      try {
+        const config = await window.api.obtenerConfiguracion();
+        if (!active || !config) return;
+
+        const org =
+          config.organization_name ||
+          (config.organization_id != null
+            ? `Organización ${config.organization_id}`
+            : "");
+        const ecoe = config.ecoe_name || `ECOE ${config.ecoe_id}`;
+        const station =
+          config.station_name || `Estación ${config.station_id}`;
+
+        setStationContext([org, ecoe, station].filter(Boolean).join(" · "));
+      } catch (error) {
+        console.warn(
+          "[CONFIG] No se pudo leer el contexto de la estación:",
+          error
+        );
+      }
+    };
+
+    loadStationContext();
+    window.addEventListener("uvecoe:config-changed", loadStationContext);
+
+    return () => {
+      active = false;
+      window.removeEventListener("uvecoe:config-changed", loadStationContext);
     };
   }, []);
 
@@ -265,6 +301,26 @@ export default function Toolbar() {
         </Tooltip>
 
         <Box sx={{ flexGrow: 1 }} />
+
+        {/* CONTEXTO DE LA ESTACIÓN CONFIGURADA */}
+        {stationContext && (
+          <Tooltip title={stationContext}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              noWrap
+              sx={{
+                minWidth: 0,
+                maxWidth: 420,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                mr: 1
+              }}
+            >
+              {stationContext}
+            </Typography>
+          </Tooltip>
+        )}
 
         {/* ESTADO DE SINCRONIZACIÓN */}
         <Tooltip

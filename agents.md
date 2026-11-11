@@ -149,7 +149,8 @@ scripts/
 Rutas auxiliares: `/settings`, `/students`, `/questions`. El Banco de Preguntas es solo
 informativo: no tiene interruptores ni guarda respuestas. `/settings` solo es accesible para un
 superadmin de la plataforma o un `administrator` de la organización; la lista de ECOEs se filtra
-por `id_organization` (el backend ya la filtra, el cliente lo vuelve a comprobar).
+por `id_organization` (el backend ya la filtra, el cliente lo vuelve a comprobar). El superadmin
+ve todas las ECOEs y puede filtrarlas por organización (`/organizations`).
 
 Si se entra directamente en `/evaluation` sin la selección completa (por ejemplo desde el icono
 "Evaluación Activa" del Toolbar), se redirige al primer paso que falte: `/`, `/rounds` o `/turns`.
@@ -188,7 +189,7 @@ Ruta de la DB:
 
 | Tabla | Campos relevantes | Notas |
 |---|---|---|
-| `configuracion` | `id`, `ecoe_id`, `station_id`, `station_name`, `block_id`, `station_order` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
+| `configuracion` | `id`, `ecoe_id`, `ecoe_name`, `station_id`, `station_name`, `block_id`, `station_order`, `organization_id`, `organization_name` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
 | `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `token_expires_at`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
 | `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `active` | `question_schema` incluye `type` y `options[].points`; los puntos se leen de `options[0].points`; `active=false` si la pregunta ya no se publica |
