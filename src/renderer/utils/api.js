@@ -1,5 +1,6 @@
 import { apiPath } from "./apiConfig";
 import { markServerAuthRequired } from "./auth";
+import { isServerOnline, setServerOnline } from "./connectivity";
 
 // Evita que una red a medias deje la pantalla esperando para siempre.
 export function timeoutSignal(ms = 10000) {
@@ -9,6 +10,11 @@ export function timeoutSignal(ms = 10000) {
 }
 
 export const fetchWithAuth = async (input, options = {}) => {
+  // Sin conexión conocida no esperamos al timeout: el llamador usa SQLite.
+  if (!isServerOnline()) {
+    throw new Error("Sin conexión con el servidor: se usan los datos locales.");
+  }
+
   const url = input.startsWith("http") ? input : apiPath(input);
 
   const token = sessionStorage.getItem("token_ecoe");
@@ -24,11 +30,18 @@ export const fetchWithAuth = async (input, options = {}) => {
 
   const signal = options.signal ?? timeoutSignal();
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-    ...(signal ? { signal } : {})
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+      ...(signal ? { signal } : {})
+    });
+  } catch (error) {
+    setServerOnline(false);
+    throw error;
+  }
+  setServerOnline(true);
 
   if (response.status === 401) {
     console.error("[API] Error 401: El servidor dice que este token NO es válido o ha expirado.");

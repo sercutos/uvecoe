@@ -13,9 +13,11 @@ import InfoIcon from '@mui/icons-material/Info';               // Icono extra pa
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
 import CloudOffIcon from '@mui/icons-material/CloudOff';
+import WifiOffIcon from '@mui/icons-material/WifiOff';
 
 import { useNavigate, useLocation } from "react-router-dom";
 import { getApiBaseUrl } from "../utils/apiConfig";
+import { useServerOnline } from "../utils/connectivity";
 import {
   clearServerAuthRequired,
   getServerToken,
@@ -60,6 +62,7 @@ export default function Toolbar() {
   const [reauthOpen, setReauthOpen] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [stationContext, setStationContext] = useState("");
+  const serverOnline = useServerOnline();
 
   useEffect(() => {
     let active = true;
@@ -319,6 +322,20 @@ export default function Toolbar() {
             >
               {stationContext}
             </Typography>
+          </Tooltip>
+        )}
+
+        {/* ESTADO DE CONEXIÓN CON EL SERVIDOR */}
+        {!serverOnline && (
+          <Tooltip title="Sin conexión con el servidor. La app trabaja en modo offline y guarda las respuestas localmente.">
+            <Chip
+              size="small"
+              icon={<WifiOffIcon />}
+              label="Sin conexión"
+              color="default"
+              variant="filled"
+              sx={{ mr: 1 }}
+            />
           </Tooltip>
         )}
 

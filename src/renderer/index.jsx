@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 
 import { initApiConfig } from "./utils/apiConfig";
+import { startServerMonitor } from "./utils/connectivity";
 import { isAdminSession, isLocalSession } from "./utils/auth";
 
 const theme = createTheme({
@@ -62,6 +63,7 @@ function Bootstrap() {
     const initialize = async () => {
       try {
         await initApiConfig();
+        startServerMonitor();
 
         let flag = null;
 

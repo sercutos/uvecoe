@@ -13,6 +13,7 @@ import {
   saveServerToken,
   saveUserSession
 } from "../utils/auth";
+import { setServerOnline } from "../utils/connectivity";
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -21,6 +22,7 @@ export default function Login({ onLogin }) {
 
   const loginOffline = async (motivo) => {
     console.warn("[LOGIN OFFLINE] Motivo:", motivo);
+    setServerOnline(false);
 
     try {
       const emailLimpio = email.trim().toLowerCase();
@@ -50,21 +52,32 @@ export default function Login({ onLogin }) {
         return;
       }
 
+      const expiracion = usuarioLocal.token_expires_at
+        ? new Date(usuarioLocal.token_expires_at)
+        : null;
+      const tokenCaducado =
+        expiracion instanceof Date &&
+        !Number.isNaN(expiracion.getTime()) &&
+        expiracion <= new Date();
+
       const tokenGuardado =
+        tokenCaducado ||
         usuarioLocal.token_temporal === "offline_token_session"
           ? null
           : usuarioLocal.token_temporal || null;
 
       saveServerToken(
         tokenGuardado,
-        usuarioLocal.token_expires_at || null
+        tokenCaducado ? null : usuarioLocal.token_expires_at || null
       );
       saveUserSession({ ...usuarioLocal, email: emailLimpio });
 
       alert(
-        isServerAuthRequired()
-          ? "⚠️ Modo Offline activado: puedes evaluar, pero necesitarás reconectar para sincronizar."
-          : "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
+        tokenCaducado
+          ? "⚠️ Modo Offline activado. La sesión del servidor ha caducado: cuando vuelvas a tener conexión, pulsa 'Reconectar' para sincronizar."
+          : isServerAuthRequired()
+            ? "⚠️ Modo Offline activado: puedes evaluar, pero necesitarás reconectar para sincronizar."
+            : "⚠️ Modo Offline activado: Accediendo con credenciales locales guardadas."
       );
 
       if (onLogin) onLogin();
@@ -86,6 +99,7 @@ export default function Login({ onLogin }) {
       console.log("[LOGIN] Intentando autenticación online con FastAPI...");
 
       const data = await loginOnline(emailLimpio, password);
+      setServerOnline(true);
 
       // /auth/tokens no devuelve rol ni organización: los leemos de /users/me.
       let usuarioRemoto = null;
