@@ -1,6 +1,6 @@
 {
   "name": "uvecoe",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "UVECOE - Evaluación ECOE con soporte offline",
   "main": "main.js",
   "scripts": {

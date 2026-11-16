@@ -16,7 +16,11 @@ import {
   MenuItem
 } from "@mui/material";
 import Grid from "@mui/material/GridLegacy";
-import { getApiBaseUrl } from "../../utils/apiConfig";
+import {
+  DEFAULT_API_BASE_URL,
+  getApiBaseUrl,
+  normalizeApiBaseUrl
+} from "../../utils/apiConfig";
 import { timeoutSignal } from "../../utils/api";
 import {
   fetchOrganizations,
@@ -39,6 +43,7 @@ export default function Settings() {
   const [pendingCount, setPendingCount] = useState(0);
   const [serverUrl, setServerUrl] = useState("");
   const [savingUrl, setSavingUrl] = useState(false);
+  const [urlError, setUrlError] = useState("");
   const [currentUrl, setCurrentUrl] = useState("");
   const [serverStatus, setServerStatus] = useState({
     state: "checking",
@@ -99,7 +104,7 @@ export default function Settings() {
     async function loadServerUrl() {
       try {
         const url = await window.api.getSetting("api_base_url");
-        const base = url || "http://localhost:8000";
+        const base = normalizeApiBaseUrl(url) || DEFAULT_API_BASE_URL;
         setServerUrl(base);
         setCurrentUrl(base);
       } catch (e) {
@@ -192,7 +197,9 @@ export default function Settings() {
         setDownloadStatus(
           error.name === "TimeoutError" || error.name === "AbortError"
             ? "❌ El servidor no respondió a tiempo."
-            : "❌ No autorizado. Inicie sesión en el servidor primero."
+            : error instanceof TypeError
+              ? "❌ Sin conexión con el servidor."
+              : "❌ No autorizado. Inicie sesión en el servidor primero."
         );
       }
     }
@@ -277,13 +284,34 @@ export default function Settings() {
   }, [selectedEcoe]);
 
   // 💾 GUARDAR URL DEL SERVIDOR
+  // El IPC no tiene timeout propio: si la DB no responde, el formulario
+  // quedaría bloqueado con savingUrl=true hasta reiniciar la app.
+  const saveWithTimeout = (key, value) =>
+    Promise.race([
+      window.api.setSetting(key, value),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("la base de datos local no respondió")),
+          5000
+        )
+      )
+    ]);
+
   const handleSaveServerUrl = async () => {
-    if (!serverUrl.trim()) return;
+    const url = normalizeApiBaseUrl(serverUrl);
+    if (!url) return;
+    if (!/^https?:\/\/\S+$/i.test(url)) {
+      setUrlError("La URL debe empezar por http:// o https://");
+      return;
+    }
+
+    setUrlError("");
     setSavingUrl(true);
     try {
-      await window.api.setSetting("api_base_url", serverUrl.trim());
-      sessionStorage.setItem("api_base_url", serverUrl.trim());
-      setCurrentUrl(serverUrl.trim());
+      await saveWithTimeout("api_base_url", url);
+      sessionStorage.setItem("api_base_url", url);
+      setServerUrl(url);
+      setCurrentUrl(url);
       setAlertInfo({ show: true, severity: "success", msg: "✅ URL del servidor guardada correctamente." });
       checkServerStatus();
     } catch (e) {
@@ -614,25 +642,29 @@ export default function Settings() {
               <CardContent>
                 <Typography variant="h6">🌐 Servidor FastAPI</Typography>
                 <Typography variant="body2" sx={{ mt: 1, color: "text.secondary" }}>
-                  URL base de Caddy/nginx (sin /backend/api/v1). El cronómetro usa
-                  el mismo origen para /socket.io; no pongas el puerto 8000 directo.
+                  URL base del servidor, sin /backend (la app añade /backend y la
+                  API v1). Ej.: https://sauron.uv.es
                 </Typography>
-                <Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+                <Box sx={{ display: "flex", gap: 1, mt: 2, alignItems: "flex-start" }}>
                   <TextField
                     size="small"
                     fullWidth
                     value={serverUrl}
-                    onChange={(e) => setServerUrl(e.target.value)}
-                    placeholder="http://localhost:8000"
-                    disabled={savingUrl}
+                    onChange={(e) => {
+                      setServerUrl(e.target.value);
+                      setUrlError("");
+                    }}
+                    placeholder="https://sauron.uv.es"
+                    error={Boolean(urlError)}
+                    helperText={urlError || `Guardada: ${currentUrl || "sin configurar"}`}
                   />
                   <Button
                     variant="contained"
                     onClick={handleSaveServerUrl}
-                    disabled={savingUrl || serverUrl === currentUrl}
+                    disabled={savingUrl || !serverUrl.trim()}
                     sx={{ flexShrink: 0 }}
                   >
-                    {savingUrl ? "..." : "Guardar"}
+                    {savingUrl ? "Guardando..." : "Guardar"}
                   </Button>
                 </Box>
               </CardContent>

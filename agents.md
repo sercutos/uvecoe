@@ -11,7 +11,7 @@
 **UVECOE** es una aplicación de escritorio **Electron** para evaluar estaciones de un ECOE
 (Examen Clínico Objetivo Estructurado). Sigue una filosofía **local-first / offline-first**:
 
-1. Se autentica contra un **FastAPI** central (`http://localhost:8000` por defecto).
+1. Se autentica contra un **FastAPI** central (`https://sauron.uv.es` por defecto).
 2. Descarga la configuración de la estación: ECOE, estación, bloque, rúbrica, alumnos y usuarios.
 3. Guarda todo en **SQLite local** (`better-sqlite3` + `Knex`).
 4. Permite evaluar sin red y autoguarda **cada switch** inmediatamente.

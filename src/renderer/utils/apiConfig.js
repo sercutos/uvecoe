@@ -1,22 +1,37 @@
 const STORAGE_KEY = "api_base_url";
 
+// Servidor central desplegado (API bajo /backend). En local se puede
+// sobrescribir desde Settings o con VITE_*.
+export const DEFAULT_API_BASE_URL = "https://sauron.uv.es";
+
+// Acepta la URL con o sin /backend (o /backend/api/v1): la app ya añade esa parte.
+export function normalizeApiBaseUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/backend(\/api(\/v1)?)?$/i, "");
+}
+
 export async function initApiConfig() {
   try {
     const url = await window.api.getSetting("api_base_url");
     if (url) {
-      sessionStorage.setItem(STORAGE_KEY, url);
-      return url;
+      const base = normalizeApiBaseUrl(url);
+      sessionStorage.setItem(STORAGE_KEY, base);
+      return base;
     }
   } catch (e) {
     console.warn("[apiConfig] No se pudo leer config, usando fallback");
   }
-  const fallback = "http://localhost:8000";
-  sessionStorage.setItem(STORAGE_KEY, fallback);
-  return fallback;
+  sessionStorage.setItem(STORAGE_KEY, DEFAULT_API_BASE_URL);
+  return DEFAULT_API_BASE_URL;
 }
 
 export function getApiBaseUrl() {
-  return sessionStorage.getItem(STORAGE_KEY) || "http://localhost:8000";
+  return (
+    normalizeApiBaseUrl(sessionStorage.getItem(STORAGE_KEY)) ||
+    DEFAULT_API_BASE_URL
+  );
 }
 
 // El Chrono se sirve por Caddy/nginx en el mismo origen que el API.

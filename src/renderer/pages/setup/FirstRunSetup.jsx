@@ -23,6 +23,7 @@ import {
   loginOnline,
   persistLogin
 } from "../../utils/auth";
+import { DEFAULT_API_BASE_URL } from "../../utils/apiConfig";
 
 function normalizeBaseUrl(value) {
   let url = String(value || "").trim();
@@ -43,7 +44,7 @@ function isLocalHost(url) {
 }
 
 export default function FirstRunSetup({ onComplete }) {
-  const [serverUrl, setServerUrl] = useState("http://localhost:8000");
+  const [serverUrl, setServerUrl] = useState(DEFAULT_API_BASE_URL);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -238,9 +239,8 @@ export default function FirstRunSetup({ onComplete }) {
         </Typography>
 
         <Alert severity="info" sx={{ mt: 3 }}>
-          Introduce la URL base del servidor, sin <code>/backend/api/v1</code>.
-          Para el cronómetro usa la URL de Caddy/nginx (normalmente HTTPS), no el
-          puerto <code>8000</code> directo.
+          Introduce la URL base del servidor, sin <code>/backend</code>. Ejemplo:
+          <code>https://sauron.uv.es</code>.
         </Alert>
 
         {feedback && (
