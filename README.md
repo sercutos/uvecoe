@@ -78,11 +78,31 @@ publicarse en GitHub Releases, no dentro del código.
 3. El primer login de cada usuario debe hacerse con red para guardar su hash bcrypt.
 4. A partir de ahí se puede evaluar sin conexión y sincronizar cuando vuelva la red.
 
+## Cronómetro
+
+El cronómetro lo manda el servidor Chrono por Socket.IO (mismo origen que la API; en local
+`http://localhost:5001`). La app no programa avisos: escucha `tic_tac` (tiempo restante),
+`init_stage`, `evento`, `end_round` y `aborted`, y dispara los MP3 empaquetados en
+`src/renderer/assets/sounds/`.
+
+Si nunca hubo señal, muestra “Sin cronómetro · usa el audio” (no hay cuenta atrás). Si se
+pierde la conexión con el cronómetro en marcha, muestra “Sin señal · estimado”: la cuenta
+atrás sigue avanzando en local desde el último `tic_tac`, pero no llegan eventos ni audios
+nuevos hasta reconectar, y el valor mostrado es una estimación. Las respuestas de
+evaluación no dependen del cronómetro: se guardan en SQLite igualmente.
+
 ## Base de datos
 
 - Desarrollo: `data/uvecoe.db`.
-- Windows empaquetado: `%APPDATA%\uvecoe\uvecoe.db`.
-- Linux empaquetado: `~/.config/uvecoe/uvecoe.db`.
+- Windows empaquetado: `C:\Users\<usuario>\AppData\Roaming\UVECOE\uvecoe.db`
+  (es `Roaming`, no la carpeta de instalación `Local\Programs\UVECOE`).
+- Linux empaquetado: `~/.config/UVECOE/uvecoe.db`.
+
+Si se borra ese `.db`, la app arranca como recién instalada: `better-sqlite3` crea un
+fichero vacío y se ejecutan todas las migraciones desde cero. Se pierden resultados no
+sincronizados, usuarios guardados y la configuración de la estación, y vuelve a aparecer
+el asistente inicial. La sincronización solo envía respuestas al servidor, no las
+descarga. Haz una copia del fichero antes de borrarlo.
 
 No se debe subir ninguna base de datos al repositorio. Contiene datos personales.
 Tampoco se suben `.env`, certificados privados ni la carpeta `node_modules`.

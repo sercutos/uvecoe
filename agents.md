@@ -177,13 +177,18 @@ Claves de `sessionStorage` usadas:
 
 ## 4. Modelo de datos local
 
-Ruta de la DB:
+Ruta de la DB (`getDbPath` en `main.js` y `src/db/knex.js`):
 
 - **Desarrollo:** `process.cwd()/data/uvecoe.db` (normalmente la raíz del repo).
-- **Empaquetado:** `app.getPath("userData")/uvecoe.db`.
+- **Empaquetado:** `app.getPath("userData")/uvecoe.db`, es decir
+  `%APPDATA%\UVECOE\uvecoe.db` en Windows (`C:\Users\<usuario>\AppData\Roaming\UVECOE`)
+  y `~/.config/UVECOE/uvecoe.db` en Linux.
 
-> ⚠️ `main.js` calcula la ruta con `__dirname/data`, mientras que `src/db/knex.js` usa
-> `userData` al estar empaquetado. Unificar esa lógica antes de tocar el empaquetado.
+> Borrar ese fichero no rompe la app: better-sqlite3 crea un `.db` vacío y
+> `db.migrate.latest()` lo inicializa. Pero es un borrado total de los datos locales
+> (resultados no sincronizados, usuarios, configuración de estación y settings) y hace
+> reaparecer el asistente inicial. La sync no descarga resultados ya enviados, así que
+> no se recuperan. Hacer copia antes.
 
 ### Tablas
 
@@ -263,6 +268,35 @@ Con `webSecurity` activo, el backend debe incluir en `CORS_ORIGINS` los orígene
 - Si no hay tick ni estado, la app muestra “Sin cronómetro” y usa el audio/megafonía.
 - Los audios de `evento.sound` (`entrar.mp3`, `salir.mp3`, etc.) se reproducen desde
   `src/renderer/assets/sounds/`.
+
+#### Comportamiento del cronómetro (`src/renderer/hooks/useChrono.js`)
+
+El servidor Chrono es la única fuente de verdad. La app no programa avisos por su cuenta:
+solo escucha Socket.IO y reacciona a lo que emite el servidor. Los MP3 están empaquetados
+en local (`src/renderer/assets/sounds/`), así que suenan sin red; lo que necesita conexión
+es el evento que los dispara.
+
+- **`tic_tac`**: guarda `duration`, `t` y el instante de recepción. El tiempo restante se
+  pinta cada 250 ms interpolando en local (`remainingForTick`), no con un tick del servidor
+  por segundo. Estados posibles: `synced`, `paused`, `finished`, `aborted`.
+- **`init_stage`**: limpia el tiempo y los avisos y deja el cronómetro a la espera del
+  primer `tic_tac`.
+- **`evento`**: muestra el mensaje y, si trae `sound`, reproduce ese MP3 local. Se ignora
+  si `target` no es `0` ni el `station_id` de esta estación.
+- **`end_round`** (solo si `id` coincide con la ronda) y **`aborted`**: terminan el
+  cronómetro en la estación.
+- **Sin conexión** (`reconnection: true`, reintento cada 2 s como máximo, timeout 5 s):
+  - Nunca llegó a haber `tic_tac`: estado `offline` → “Sin cronómetro · usa el audio”.
+    No hay cuenta atrás; se depende de la megafonía.
+  - Se pierde la conexión o pasan más de 5 s sin `tic_tac` con el cronómetro en marcha:
+    estado `stale` → “Sin señal · estimado”. La cuenta atrás **sigue avanzando** en local
+    desde el último `tic_tac` y puede llegar a 0, pero es una estimación: no llegan cambios
+    de etapa, pausas, eventos ni audios hasta que se recupere la conexión.
+  - Al reconectar sin `tic_tac` previo: `connecting` y, si en 5 s no llega tick, `offline`.
+    Si ya había tick, sigue en `stale` (cuenta estimada) hasta recibir el siguiente
+    `tic_tac`, que devuelve el estado real (`synced`, `paused`, etc.).
+- Un `sound` cuyo nombre no está en el mapa de `chronoAudio.js` se ignora con aviso en
+  consola. Se admite una URL `http(s)` absoluta, pero no es el caso normal.
 
 | Endpoint | Forma de respuesta | Notas críticas |
 |---|---|---|
@@ -548,7 +582,7 @@ Checklist funcional:
 - `data/openecoe_lite.db` fue eliminada: era legacy y no la usaba el código.
 - `dist/` se regeneró y `release/` (Linux y Windows) está ignorado por Git.
 - Instalador Windows generado, firmado y probado: `release/UVECOE-1.0.0-setup.exe`, instalación
-  per-user, acceso directo y DB en `%APPDATA%\uvecoe\uvecoe.db`. Incluye HashRouter, GridLegacy,
+  per-user, acceso directo y DB en `%APPDATA%\UVECOE\uvecoe.db`. Incluye HashRouter, GridLegacy,
   contador de pendientes, auto-sync, soft-delete y asistente de primer arranque.
 - Certificado interno `UVECOE - Universitat de Valencia` (thumbprint
   `B09EC007BDCC8A7C4E9968973C7F3EE7E852C83D`, válido hasta 2031). Firmante y timestamp
@@ -556,11 +590,11 @@ Checklist funcional:
 - Para los 12 portátiles hay que desplegar el `.cer` en `LocalMachine\Root` y
   `LocalMachine\TrustedPublisher` con `scripts/install-code-signing-cert.ps1` (admin) o GPO/Intune.
 - Desinstalación limpia: `scripts/uninstall-clean.ps1` (backup de DB, borra
-  `%APPDATA%\uvecoe`, opcional `-RemoveCertificate`). El desinstalador NSIS solo
+  `%APPDATA%\UVECOE`, opcional `-RemoveCertificate`). El desinstalador NSIS solo
   no borra la DB por seguridad.
 - `settings.setup_completed` = `true` en DBs configuradas; una DB nueva arranca en el asistente.
 - La app empaquetada usa `HashRouter` (file://); en desarrollo se mantiene `BrowserRouter`.
-- La DB empaquetada en Linux se crea en `~/.config/uvecoe/uvecoe.db` (userData).
+- La DB empaquetada en Linux se crea en `~/.config/UVECOE/uvecoe.db` (userData).
 - Flujo E2E verificado: online/offline, Estación 1 (orden 1) y Estación 2 (orden 2), login
   online/offline, FK/upsert, puntos 0.5, sync con token y rechazo de lote parcial.
 - Soft-delete verificado: quitar una pregunta/alumno de la descarga los deja `active=false`,
