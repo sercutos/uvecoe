@@ -60,6 +60,9 @@ npm run pack
 # Instalador Windows NSIS sin firmar -> release/UVECOE-<version>-setup.exe
 # (requiere Windows o Wine/Docker; no requiere certificado)
 npm run dist:win
+# En WSL/Linux sin Wine falla al generar el desinstalador y puede dejar un
+# setup.exe truncado (~300 KB). Si el instalador real no pesa ~100 MB, el
+# build falló: repetirlo en Windows o con Wine instalado.
 
 # Windows firmado con el certificado interno (recomendado)
 # Lee CSC_LINK/CSC_KEY_PASSWORD y verifica la firma al terminar
@@ -194,10 +197,10 @@ Ruta de la DB (`getDbPath` en `main.js` y `src/db/knex.js`):
 
 | Tabla | Campos relevantes | Notas |
 |---|---|---|
-| `configuracion` | `id`, `ecoe_id`, `ecoe_name`, `station_id`, `station_name`, `block_id`, `station_order`, `organization_id`, `organization_name` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación |
+| `configuracion` | `id`, `ecoe_id`, `ecoe_name`, `station_id`, `station_name`, `block_id`, `station_order`, `organization_id`, `organization_name`, `evaluators` | Una sola fila. `block_id` es `NOT NULL`; `station_order` es el orden 1..12 de la estación; `evaluators` es un JSON `[{ id, email }]` con los evaluadores asignados a la estación en la plataforma (lista vacía = ninguno) |
 | `users` | `usuario_id_server` (unique), `email` (unique), `role`, `is_admin`, `is_superadmin`, `id_organization`, `token_temporal`, `token_expires_at`, `password_hash` | Copia de usuarios para login offline; `password_hash` es bcrypt y se guarda en el primer login online; los campos de admin se leen de `/users/me` |
 | `students` | `id` (PK del servidor), `name`, `surnames`, `dni`, `id_planner`, `planner_order`, `active` | Se descargan **los 276 del ECOE**; `id_planner` agrupa los 12 de cada turno; `active=false` si desaparecen del servidor |
-| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `active` | `question_schema` incluye `type` y `options[].points`; los puntos se leen de `options[0].points`; `active=false` si la pregunta ya no se publica |
+| `questions` | `id` (PK del servidor), `area`, `id_station`, `order`, `id_block`, `reference`, `description`, `question_schema`, `active` | `question_schema` incluye `type` y las opciones; el servidor las publica como `_options[].points` (también se acepta `options[].points`); `active=false` si la pregunta ya no se publica |
 | `resultados` | `id_student` FK, `id_question` FK, `id_station`, `points`, `answer_schema` (TEXT), `sincronizado`, `sync_batch`, `evaluado_en` | `points` admite decimales (0.5); índice único `(id_student, id_question, id_station)`; escritura por `upsert`; `sync_batch` marca el lote en vuelo y cualquier escritura nueva lo limpia |
 | `settings` | `key` (PK), `value` | `api_base_url` |
 | `shifts` | `id`, `id_ecoe`, `shift_code`, `time_start` | Turnos descargados para seleccionar fecha/turno offline |
@@ -312,6 +315,8 @@ es el evento que los dispara.
 | `GET /questions?station_id=&block_id=` | Array | Cada pregunta trae `question_schema` y `area.name`; los puntos están en `options[].points` (0.5, 1...) |
 | `GET /students?ecoe_id=&planner_id=` | `{ items, total, ... }` | **El parámetro es `ecoe_id`, NO `id_ecoe`** |
 | `GET /users` | Array | Requiere Bearer |
+| `GET /users/{user_id}` | `UserRead` | Se usa para resolver los evaluadores asignados a la estación |
+| `GET /permissions?object=stations&id_object=` | Array de `PermissionRead` | `name="evaluate"` indica qué usuarios evalúan esa estación; se guardan en `configuracion.evaluators` |
 | `POST /answers/bulk-sync` | `{ status, message, inserted_or_updated }` | La app exige token de sesión antes de llamarlo |
 | `GET /answers/station/{station_id}` | Array de `AnswerRead` | Se descarga al configurar/actualizar el portátil y se importa en `resultados` |
 
@@ -351,7 +356,11 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
 ## 7. Reglas de negocio e invariantes
 
 1. **Un portátil = un ECOE + una estación + un bloque.** La configuración se guarda en
-   `configuracion` y bloquea la pantalla de administración.
+   `configuracion` y bloquea la pantalla de administración. La descarga obtiene los evaluadores
+   con permiso `evaluate` sobre la estación (`GET /permissions?object=stations&id_object=...`) y
+   los guarda en `configuracion.evaluators`. Solo esos evaluadores pueden iniciar sesión en el
+   portátil; si la plataforma no tiene ninguno asignado, la lista queda vacía y no entra ningún
+   evaluador. Los administradores sí pueden entrar para configurar/revisar el equipo.
 2. **Autoguardado inmediato:** cada cambio de switch debe persistirse en `resultados`.
 3. **Unicidad lógica:** una fila por `(id_student, id_question, id_station)`. La DB tiene un
    índice único y `db:guardar-resultado` usa `upsert`; no volver al patrón `select` + `insert`.
@@ -361,8 +370,10 @@ turno + ronda y se cargan solo sus 12 alumnos. La rotación se aplica después c
    (`GET /answers/station/{station_id}`) como `sincronizado = true`, pero **no pisa** las respuestas
    locales con `sincronizado = false` (pendientes de subir).
 5. **Puntos reales:** `points` y `answer_schema` se calculan desde
-   `question_schema.options[0].points` publicado por el servidor. No hardcodear `1` ni
-   `id_option: 1`. Una respuesta con puntos `> 0` (por ejemplo `0.5`) se muestra como switch activo.
+   `question_schema._options[0].points` (o `options[0].points`) publicado por el servidor. No
+   hardcodear `1` ni `id_option: 1`. Una respuesta está marcada si tiene puntos `> 0` **o** si
+   `answer_schema.selected` no está vacío: el servidor muestra el switch por `selected`, y puede
+   haber respuestas marcadas con 0 puntos.
 6. **Configuración atómica:** descargar y validar todo (bloque, preguntas, 276 alumnos,
    planificación y usuarios) antes de guardar `configuracion`, y hacerlo en una transacción.
 7. **Los IDs locales son IDs del servidor.** No generar IDs ficticios para resultados que luego

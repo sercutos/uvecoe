@@ -61,6 +61,14 @@ function createMainWindow() {
   // Quita el menú nativo de la ventana superior
   mainWindow.setMenu(null);
 
+  // F11 alterna pantalla completa (oculta la barra de tareas del sistema)
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyDown" && input.key === "F11") {
+      event.preventDefault();
+      mainWindow.setFullScreen(!mainWindow.isFullScreen());
+    }
+  });
+
   // La ventana solo puede quedarse en la app; no navega a webs externas.
   const appFileUrl = pathToFileURL(
     path.join(__dirname, "dist/index.html")
@@ -428,8 +436,8 @@ ipcMain.handle('db:obtener-respuestas-alumno', async (event, { id_student, id_st
   try {
     const respuestas = await db('resultados')
       .where({ id_student, id_station })
-      .select('id_question', 'points');
-    return respuestas; // Devolverá un array como: [{ id_question: 1, points: 1 }, ...]
+      .select('id_question', 'points', 'answer_schema');
+    return respuestas; // Devolverá un array como: [{ id_question: 1, points: 1, answer_schema: '...' }, ...]
   } catch (error) {
     console.error("❌ Error al recuperar respuestas locales:", error);
     return [];

@@ -208,6 +208,7 @@ export default function AdminConfig({ onConfigSuccess }) {
         block_id: data.block.id,
         station_order:
           data.station?.order ?? estacionActiva?.order ?? null,
+        evaluators: data.evaluators,
         ...getEcoeContext(ecoeSeleccionada, selectedEcoe, data.organizations)
       };
 

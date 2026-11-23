@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  isAnswerMarked,
   pointsForToggle,
+  questionOptions,
   reorderStudentsForStation
 } from "./scoring.mjs";
 
@@ -50,4 +52,31 @@ test("invalid option points stay at 0", () => {
     pointsForToggle({ options: [{ points: "no-es-un-numero" }] }, true),
     0
   );
+});
+
+test("question options are read from options or _options", () => {
+  assert.equal(questionOptions({ options: [{ points: 1 }] }).length, 1);
+  assert.equal(
+    questionOptions({ question_schema: { _options: [{ points: 0.5 }] } })[0]
+      .points,
+    0.5
+  );
+  assert.deepEqual(questionOptions({}), []);
+});
+
+test("a rubric using _options still scores its points", () => {
+  const question = {
+    question_schema: { _options: [{ id_option: 1, points: 0.5 }] }
+  };
+  assert.equal(pointsForToggle(question, true), 0.5);
+});
+
+test("answers with 0 points but selected options count as marked", () => {
+  assert.equal(
+    isAnswerMarked(0, '{"type":"checkbox","selected":[{"id_option":1}]}'),
+    true
+  );
+  assert.equal(isAnswerMarked(0, '{"type":"checkbox","selected":[]}'), false);
+  assert.equal(isAnswerMarked(0, "no-es-json"), false);
+  assert.equal(isAnswerMarked(1, '{"type":"checkbox","selected":[]}'), true);
 });

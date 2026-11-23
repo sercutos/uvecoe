@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 
 import logoImg from "../../../assets/images/logo1.png";
 import {
+  canAccessConfiguredStation,
   fetchCurrentUser,
   isServerAuthRequired,
   loginOnline,
@@ -49,6 +50,18 @@ export default function Login({ onLogin }) {
 
       if (!passwordOk) {
         alert("Contraseña incorrecta.");
+        return;
+      }
+
+      const puedeEntrar = await canAccessConfiguredStation({
+        ...usuarioLocal,
+        email: emailLimpio
+      });
+
+      if (!puedeEntrar) {
+        alert(
+          "Este usuario no está asignado como evaluador a la estación configurada en este equipo."
+        );
         return;
       }
 
@@ -107,6 +120,31 @@ export default function Login({ onLogin }) {
         usuarioRemoto = await fetchCurrentUser(data.token);
       } catch (meError) {
         console.warn("[LOGIN] No se pudo leer /users/me:", meError.message);
+      }
+
+      let usuarioParaPermiso = usuarioRemoto;
+      if (!usuarioParaPermiso) {
+        try {
+          usuarioParaPermiso = await window.api?.obtenerUsuarioLocal(
+            emailLimpio
+          );
+        } catch (localError) {
+          console.warn(
+            "[LOGIN] No se pudo leer el usuario local:",
+            localError.message
+          );
+        }
+      }
+
+      const puedeEntrar = await canAccessConfiguredStation(
+        usuarioParaPermiso || { email: emailLimpio }
+      );
+
+      if (!puedeEntrar) {
+        alert(
+          "Este usuario no está asignado como evaluador a la estación configurada en este equipo."
+        );
+        return;
       }
 
       await persistLogin({

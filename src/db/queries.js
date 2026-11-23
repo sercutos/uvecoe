@@ -321,7 +321,11 @@ const queries = {
         station_order: config.station_order ?? null,
         ecoe_name: config.ecoe_name ?? null,
         organization_name: config.organization_name ?? null,
-        organization_id: config.organization_id ?? null
+        organization_id: config.organization_id ?? null,
+        evaluators:
+          config.evaluators === undefined
+            ? null
+            : JSON.stringify(config.evaluators)
       });
     });
   },

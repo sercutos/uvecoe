@@ -62,6 +62,31 @@ export async function fetchOrganizations() {
   return Array.isArray(data) ? data : data.items || [];
 }
 
+// Evaluadores asignados a la estación en la plataforma (permiso "evaluate").
+// Si no hay ninguno, devuelve [] y el portátil no tendrá evaluadores locales.
+export async function fetchStationEvaluators(stationId) {
+  const permissions = await fetchWithAuth(
+    `/permissions?object=stations&id_object=${stationId}`
+  );
+
+  const ids = [
+    ...new Set(
+      (Array.isArray(permissions) ? permissions : permissions.items || [])
+        .filter(
+          (p) => p.object === "stations" && p.name === "evaluate"
+        )
+        .map((p) => Number(p.user_id))
+        .filter(Number.isFinite)
+    )
+  ];
+
+  const users = await Promise.all(
+    ids.map((id) => fetchWithAuth(`/users/${id}`))
+  );
+
+  return users.map((u) => ({ id: u.id, email: u.email }));
+}
+
 // Identifica el ECOE y su organización para mostrarlos en el Toolbar.
 export function getEcoeContext(ecoe, fallbackId, organizations = []) {
   const ecoeId = Number(ecoe?.id ?? fallbackId);
@@ -108,7 +133,8 @@ export async function fetchStationData({ ecoeId, stationId }) {
     plannersData,
     stations,
     answers,
-    organizationsData
+    organizationsData,
+    evaluators
   ] = await Promise.all([
     fetchWithAuth(`/blocks?station_id=${stationId}&per_page=100`),
     fetchQuestions(stationId),
@@ -134,7 +160,8 @@ export async function fetchStationData({ ecoeId, stationId }) {
         error
       );
       return [];
-    })
+    }),
+    fetchStationEvaluators(stationId)
   ]);
 
   const block = (blocksData.items || blocksData)[0];
@@ -169,6 +196,7 @@ export async function fetchStationData({ ecoeId, stationId }) {
     planners,
     station,
     answers,
-    organizations
+    organizations,
+    evaluators
   };
 }

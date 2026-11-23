@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { getApiBaseUrl } from "./apiConfig";
+import { isEvaluatorAssigned } from "./stationAssignment.mjs";
 
 const ADMIN_ROLES = ["administrator", "superadmin"];
 const TOKEN_KEY = "token_ecoe";
@@ -26,6 +27,38 @@ export function isAdminUser(user) {
     roleNames(user).some((name) => ADMIN_ROLES.includes(name)) ||
     ADMIN_ROLES.includes(role)
   );
+}
+
+// Comprueba contra la configuración local si este usuario puede usar la
+// estación descargada. Sin evaluadores asignados en la plataforma, no entra
+// ningún evaluador; los administradores sí, para poder configurar el equipo.
+export async function canAccessConfiguredStation(user) {
+  try {
+    const config = await window.api?.obtenerConfiguracion();
+    if (!config) return true;
+
+    let evaluators = config.evaluators;
+    if (typeof evaluators === "string") {
+      try {
+        evaluators = JSON.parse(evaluators);
+      } catch {
+        evaluators = [];
+      }
+    }
+
+    return isEvaluatorAssigned({
+      isAdmin: isAdminUser(user),
+      email: user?.email,
+      id: user?.id ?? user?.usuario_id_server,
+      evaluators
+    });
+  } catch (error) {
+    console.warn(
+      "[AUTH] No se pudo comprobar la asignación de la estación:",
+      error.message
+    );
+    return false;
+  }
 }
 
 export function saveUserSession(user = {}) {

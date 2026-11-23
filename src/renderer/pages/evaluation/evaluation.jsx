@@ -18,7 +18,9 @@ import {
   markServerAuthRequired
 } from "../../utils/auth";
 import {
+  isAnswerMarked,
   pointsForToggle,
+  questionOptions,
   reorderStudentsForStation
 } from "../../utils/scoring.mjs";
 import useChrono from "../../hooks/useChrono";
@@ -339,9 +341,7 @@ export default function EvaluationPage() {
               "Pregunta sin descripción",
             area: q.area?.name || q.area_nombre || "General",
             type: q.question_schema?.type || "checkbox",
-            options: Array.isArray(q.question_schema?.options)
-              ? q.question_schema.options
-              : []
+            options: questionOptions(q)
           };
         });
 
@@ -384,7 +384,10 @@ export default function EvaluationPage() {
         // tardía del alumno anterior nunca cae en el alumno siguiente.
         const guardadas = {};
         for (const respuesta of respuestasGuardadas) {
-          guardadas[respuesta.id_question] = Number(respuesta.points) > 0;
+          guardadas[respuesta.id_question] = isAnswerMarked(
+            respuesta.points,
+            respuesta.answer_schema
+          );
         }
 
         setAnswersByStudent((prev) => ({
@@ -458,7 +461,7 @@ export default function EvaluationPage() {
     const id_station = configLocal?.station_id || 1;
 
     // Puntos reales publicados por el servidor en la rúbrica.
-    const selectedOption = q.options?.[0] || null;
+    const selectedOption = questionOptions(q)[0] || null;
     const points = pointsForToggle(q, nuevoValorSwitch);
 
     // Esquema idéntico al que espera la API.
